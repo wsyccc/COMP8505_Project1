@@ -97,7 +97,6 @@ class Commander:
             #src_ip = socket.gethostbyname(socket.gethostname())  # attacker local IP
             src_ip = get_local_ip(VICTIM_IP, COVERT_UDP_PORT)
 
-            print(f"[DEBUG] Commander is using src_ip = {src_ip} for covert packets")
             dst_ip = VICTIM_IP
             src_addr = socket.inet_aton(src_ip)
             dst_addr = socket.inet_aton(dst_ip)
