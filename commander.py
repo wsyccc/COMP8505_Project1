@@ -5,7 +5,7 @@ import struct
 import time
 
 # Commander configuration
-VICTIM_IP = "192.168.1.4"  # Target victim IP address (change as appropriate)
+VICTIM_IP = "192.168.1.124"  # Target victim IP address (change as appropriate)
 KNOCK_SEQUENCE = [12345, 23456, 34567]  # Port knocking sequence (example)
 COVERT_UDP_PORT = 40000  # The UDP port on a victim used for a covert channel
 
