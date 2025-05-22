@@ -302,39 +302,49 @@ def cmd_monitor_file(comm: Commander):
 
     with open(log_filename, "a", encoding="utf-8") as logfile:
         try:
-            # 先读一条启动确认（MON_FILE_STARTED 或错误），并记录
-            start_resp = comm.recv_covert_message()
-            if start_resp:
-                decoded = start_resp.decode(errors="ignore")
-                try:
-                    m0 = json.loads(decoded)
-                    print(f"[{m0['timestamp']}] {m0['type']}: {m0.get('path', '')}")
-                    logfile.write(json.dumps(m0, ensure_ascii=False) + "\n")
-                except json.JSONDecodeError:
-                    print("[DEBUG] 非 JSON 启动响应:", decoded.strip())
-                    logfile.write(decoded + "\n")
-                logfile.flush()
+            # 缓冲区，存放尚未以 '\n' 分割的残余数据
+            buffer = ""
 
-            # 进入主循环
+            # 先接收一次启动确认，放到 buffer 里
+            resp = comm.recv_covert_message()
+            if resp:
+                buffer += resp.decode('utf-8', errors='ignore')
+
             while True:
-                raw = comm.recv_covert_message()
-                if raw is None:
+                # 再次 recv，累加到 buffer
+                chunk = comm.recv_covert_message()
+                if chunk is None:
                     continue
-                print("[DEBUG raw data]:", raw)
-                text = raw.decode('utf-8', errors='ignore')
-                # 提取首尾大括号之间的内容
-                start = text.find('{')
-                end = text.rfind('}')
-                if start != -1 and end != -1:
-                    json_str = text[start:end + 1]
+                buffer += chunk.decode('utf-8', errors='ignore')
+
+                # 只要 buffer 中有换行，就提取完整行
+                while True:
+                    nl = buffer.find('\n')
+                    if nl == -1:
+                        break
+                    line = buffer[:nl]
+                    buffer = buffer[nl + 1:]
+
+                    # 从 line 中提取 {…} 之间的 JSON
+                    start = line.find('{')
+                    end = line.rfind('}')
+                    if start == -1 or end == -1:
+                        # 这一行不是完整 JSON，丢掉（或按需记录）
+                        continue
+                    json_str = line[start:end + 1]
                     try:
                         msg = json.loads(json_str)
                     except json.JSONDecodeError:
                         continue
-                    # 打印并记录
-                    print(f"[{msg['timestamp']}] 事件: {msg['type']} | 文件: {msg.get('path', '')}")
+
+                    # 打印并写入日志
+                    ts = msg.get('timestamp', '')
+                    tp = msg.get('type', '')
+                    path = msg.get('path', '')
+                    print(f"[{ts}] 事件: {tp} | 文件: {path}")
                     if 'content' in msg:
                         print(msg['content'])
+                    print("-" * 40)
                     logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
                     logfile.flush()
 
