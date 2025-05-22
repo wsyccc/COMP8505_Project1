@@ -309,6 +309,7 @@ def cmd_monitor_file(comm: Commander):
             print(first)
             if first:
                 buffer += first.decode('utf-8', errors='ignore')
+            print(buffer)
 
             while True:
                 chunk = comm.recv_covert_message()
