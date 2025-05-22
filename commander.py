@@ -317,26 +317,26 @@ def cmd_monitor_file(comm: Commander):
 
             # 进入主循环
             while True:
-                data = comm.recv_covert_message()
-                if data is None:
+                raw = comm.recv_covert_message()
+                if raw is None:
                     continue
-                # 先打个调试
-                print("[DEBUG raw data]:", data)
-                text = data.decode(errors="ignore")
-                # 尝试当 JSON 解析
-                try:
-                    msg = json.loads(text)
-                    # 标准 JSON 事件
-                    print(f"[{msg['timestamp']}] 事件 {msg['type']} | {msg.get('path', '')}")
+                print("[DEBUG raw data]:", raw)
+                text = raw.decode('utf-8', errors='ignore')
+                # 提取首尾大括号之间的内容
+                start = text.find('{')
+                end = text.rfind('}')
+                if start != -1 and end != -1:
+                    json_str = text[start:end + 1]
+                    try:
+                        msg = json.loads(json_str)
+                    except json.JSONDecodeError:
+                        continue
+                    # 打印并记录
+                    print(f"[{msg['timestamp']}] 事件: {msg['type']} | 文件: {msg.get('path', '')}")
                     if 'content' in msg:
                         print(msg['content'])
-                    print("-" * 40)
                     logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
-                except json.JSONDecodeError:
-                    # 非 JSON 文本也记录，以防万一
-                    print("[DEBUG] 非 JSON 消息:", text.strip())
-                    logfile.write(text + "\n")
-                logfile.flush()
+                    logfile.flush()
 
         except KeyboardInterrupt:
             print("\n[*] 停止文件监控。")

