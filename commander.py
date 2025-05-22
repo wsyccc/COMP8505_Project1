@@ -306,6 +306,7 @@ def cmd_monitor_file(comm: Commander):
 
             # 把第一条确认消息也丢进 buffer
             first = comm.recv_covert_message()
+            print(first)
             if first:
                 buffer += first.decode('utf-8', errors='ignore')
 
