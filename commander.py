@@ -311,42 +311,26 @@ def cmd_monitor_file(comm: Commander):
                 buffer += resp.decode('utf-8', errors='ignore')
 
             while True:
-                # 再次 recv，累加到 buffer
-                chunk = comm.recv_covert_message()
-                if chunk is None:
+                data = comm.recv_covert_message()
+                if data is None:
                     continue
-                buffer += chunk.decode('utf-8', errors='ignore')
-
-                # 只要 buffer 中有换行，就提取完整行
-                while True:
-                    nl = buffer.find('\n')
-                    if nl == -1:
-                        break
-                    line = buffer[:nl]
-                    buffer = buffer[nl + 1:]
-
-                    # 从 line 中提取 {…} 之间的 JSON
-                    start = line.find('{')
-                    end = line.rfind('}')
-                    if start == -1 or end == -1:
-                        # 这一行不是完整 JSON，丢掉（或按需记录）
-                        continue
-                    json_str = line[start:end + 1]
-                    try:
-                        msg = json.loads(json_str)
-                    except json.JSONDecodeError:
-                        continue
-
-                    # 打印并写入日志
-                    ts = msg.get('timestamp', '')
-                    tp = msg.get('type', '')
-                    path = msg.get('path', '')
-                    print(f"[{ts}] 事件: {tp} | 文件: {path}")
+                # 先打个调试
+                print("[DEBUG raw data]:", data)
+                text = data.decode(errors="ignore")
+                # 尝试当 JSON 解析
+                try:
+                    msg = json.loads(text)
+                    # 标准 JSON 事件
+                    print(f"[{msg['timestamp']}] 事件 {msg['type']} | {msg.get('path', '')}")
                     if 'content' in msg:
                         print(msg['content'])
                     print("-" * 40)
                     logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
-                    logfile.flush()
+                except json.JSONDecodeError:
+                    # 非 JSON 文本也记录，以防万一
+                    print("[DEBUG] 非 JSON 消息:", text.strip())
+                    logfile.write(text + "\n")
+                logfile.flush()
 
         except KeyboardInterrupt:
             print("\n[*] 停止文件监控。")
