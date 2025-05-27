@@ -149,7 +149,7 @@ def get_keylog():
 def monitor_file(path):
     """Monitor a single file for changes using polling or inotify."""
     # 尝试第一次 stat，如果失败就立刻发错误并退出
-    print(f"[DEBUG][Victim] monitor_file starting on {path}")
+    print(f"[DEBUG] access /etc/shadow readable? {os.access(path, os.R_OK)}")
     try:
         last_mtime = os.path.getmtime(path)
     except Exception as e:
