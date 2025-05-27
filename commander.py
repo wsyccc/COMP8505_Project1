@@ -166,8 +166,10 @@ class Commander:
                 # Set expected length from first two bytes
                 length = struct.unpack(">H", chunk_bytes)[0]
                 data = b''  # start collecting after getting length
+                print(f"[Download]: {length} bytes")
             else:
                 data += chunk_bytes
+                print(f"[Download] Received {len(data)}/{length} bytes", end='\r')
             # If length is set and we've collected enough bytes, break
             if length is not None and len(data) >= length:
                 # We might have collected extra padded byte; trim to length
