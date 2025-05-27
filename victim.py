@@ -352,6 +352,7 @@ def send_covert_response(data_bytes):
         udp_header = struct.pack(">HHHH", src_port, dst_port, udp_len, udp_checksum)
         packet = ip_header + udp_header
         sock.sendto(packet, (dst_ip, 0))
+        time.sleep(0.001)
     sock.close()
 
 
