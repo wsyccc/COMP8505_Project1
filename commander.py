@@ -429,7 +429,7 @@ def cmd_monitor_dir(comm: Commander):
 
             # —— 暂停监控 ——
             comm.send_covert_message(b"CMD_STOP_MON_DIR")
-            time.sleep(0.5)  # 等待监控线程退出
+            time.sleep(1.2)  # 等待监控线程退出
 
             # —— 执行下载 ——
             try:
@@ -443,7 +443,7 @@ def cmd_monitor_dir(comm: Commander):
 
             # —— 恢复监控 ——
             comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
-            time.sleep(0.5)  # 等待新线程启动
+            time.sleep(1.2)  # 等待新线程启动
 
     except KeyboardInterrupt:
         print("\n[*] 停止目录监控。")
