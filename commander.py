@@ -211,6 +211,14 @@ class Commander:
         """
         下载 remote_path 文件并打印每个 chunk 的调试信息
         """
+        try:
+            self.sock.settimeout(0.1)
+            while True:
+                self.sock.recvfrom(65535)
+        except socket.timeout:
+            pass
+        finally:
+            self.sock.settimeout(RECV_TIMEOUT)
         # 1) 发送 CMD_GET
         cmd = f"CMD_GET:{remote_path}".encode()
         print(f"[*] 请求下载文件 `{remote_path}` …")
