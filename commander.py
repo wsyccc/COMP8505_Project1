@@ -421,18 +421,27 @@ def cmd_monitor_dir(comm: Commander):
                 try:
                     msg = json.loads(data.decode(errors="ignore"))
                 except json.JSONDecodeError:
-                    # 如果解析失败，忽略
+                    # 解析失败就忽略
                     continue
 
                 # 打印关键信息
-                print(
-                    f"[{msg['timestamp']}] 事件类型: {msg['type']} | 文件: {msg.get('filename', '')} | 路径: {msg['path']}")
-                # 如果有 content 字段，就打印
+                print(f"[{msg['timestamp']}] 事件类型: {msg['type']} | 文件: {msg.get('filename', '')} | 路径: {msg['path']}")
                 if 'content' in msg:
                     print(msg['content'])
+                # **新功能**：输出变动文件路径并下载文件
+                if 'path' in msg:
+                    changed_path = msg['path']
+                    print(f"[*] 变动文件路径：{changed_path}")
+                    try:
+                        local_name = os.path.basename(changed_path)
+                        success = comm.download_file_with_debug(changed_path, local_name)
+                        if not success:
+                            print(f"[!] 下载文件失败：{changed_path}")
+                    except Exception as e:
+                        print(f"[!] 下载文件 {changed_path} 时发生异常：{e}")
                 print("-" * 40)
 
-                # 追加写入日志
+                # 追加写入日志文件
                 logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
                 logfile.flush()
 
